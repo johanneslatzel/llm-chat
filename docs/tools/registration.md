@@ -1,0 +1,27 @@
+# Registration
+
+Register tools with the service via `service.tools().add(...)`:
+
+```ts
+import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "llm-chat";
+
+// tool definition (see "Defining a tool")
+class GreetTool extends Tool {
+    constructor() {
+        super("greet", "Greets a person by name.", new ToolParameters(
+            { name: new ToolParameterProperty("The name to greet") }, ["name"]
+        ));
+    }
+    protected async onExecute(args: Record<string, unknown>) {
+        const name = args.name;
+        return typeof name === "string"
+            ? { result: `Hello, ${name}!`, status: ResultStatus.Success }
+            : { result: "name must be a string", status: ResultStatus.Error };
+    }
+}
+
+const service = new OpenAIChatService();
+service.tools().add(new GreetTool());
+```
+
+Duplicates throw: `"A tool with the name 'greet' is already registered."`

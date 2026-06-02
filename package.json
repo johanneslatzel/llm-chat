@@ -1,6 +1,6 @@
 {
     "name": "llm-chat",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,
@@ -46,6 +46,7 @@
         "format": "prettier --write src",
         "test": "vitest --exclude 'dist/**'",
         "test:coverage": "vitest run --coverage --exclude 'dist/**'",
+        "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky"
     },
     "lint-staged": {
