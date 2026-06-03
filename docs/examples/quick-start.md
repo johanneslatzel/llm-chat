@@ -3,7 +3,7 @@
 ## Basic chat
 
 ```ts
-import { OpenAIChatService } from "llm-chat";
+import { OpenAIChatService } from "@johannes.latzel/llm-chat";
 
 const service = new OpenAIChatService();
 const chat = service.chat();
@@ -26,7 +26,7 @@ for (const msg of chat.messages()) {
 ## With tools
 
 ```ts
-import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "llm-chat";
+import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool {
     constructor() {

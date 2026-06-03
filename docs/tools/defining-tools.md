@@ -1,7 +1,7 @@
 # Defining a tool
 
 ```ts
-import { Tool, ToolParameters, ToolParameterProperty, PartialToolResult, ResultStatus } from "llm-chat";
+import { Tool, ToolParameters, ToolParameterProperty, PartialToolResult, ResultStatus } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool {
     constructor() {

@@ -1,6 +1,7 @@
 # LLM Chat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![npm](https://img.shields.io/npm/v/@johannes.latzel/llm-chat)](https://www.npmjs.com/package/@johannes.latzel/llm-chat)
 [![version](https://img.shields.io/github/package-json/v/johanneslatzel/llm-chat)](https://github.com/johanneslatzel/llm-chat/releases)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/johanneslatzel/llm-chat/pulls)
@@ -17,7 +18,7 @@ A typed TypeScript package for building LLM-powered chats with tool execution an
 ## Installation
 
 ```bash
-npm install johanneslatzel/llm-chat
+npm install @johannes.latzel/llm-chat
 ```
 
 ## Documentation

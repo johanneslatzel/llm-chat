@@ -3,7 +3,7 @@
 Register tools with the service via `service.tools().add(...)`:
 
 ```ts
-import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "llm-chat";
+import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "@johannes.latzel/llm-chat";
 
 // tool definition (see "Defining a tool")
 class GreetTool extends Tool {
