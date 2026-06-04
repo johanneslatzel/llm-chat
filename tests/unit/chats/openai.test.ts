@@ -468,6 +468,25 @@ describe('OpenAIChatService', () => {
             expect(callArgs.messages[0].role).toBe('user');
         });
 
+        it('prefixes user content with local ISO timestamp when prefixWithTimestamp is true', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(
+                mock,
+                { model: 'test-model', prefixWithTimestamp: true },
+                config
+            );
+            service.chatImpl.user('Hello');
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            const sentContent: string = callArgs.messages[0].content;
+            expect(sentContent).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}: Hello$/);
+        });
+
         it('throws for unknown role in toOpenAIMessages', async () => {
             const mockChunks = makeChunks([
                 { content: 'Hi' },
@@ -476,8 +495,8 @@ describe('OpenAIChatService', () => {
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
 
-            vi.spyOn(service.chatImpl, 'getMessages').mockReturnValue([
-                { role: 'bogus_role' as any, content: 'test' }
+            vi.spyOn(service.chatImpl, 'messages').mockReturnValue([
+                { role: 'bogus_role' as any, content: 'test', createdAt: new Date() }
             ]);
 
             await expect((service as any).createStream().next()).rejects.toThrow('Unexpected role: bogus_role');

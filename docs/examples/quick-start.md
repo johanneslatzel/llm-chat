@@ -26,7 +26,7 @@ for (const msg of chat.messages()) {
 ## With tools
 
 ```ts
-import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "@johannes.latzel/llm-chat";
+import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus, ChunkType } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool {
     constructor() {
@@ -46,9 +46,9 @@ const service = new OpenAIChatService();
 service.tools().add(new GreetTool());
 const chat = service.chat();
 
-chat.hook().chunk((_, text) => process.stdout.write(text));
-chat.hook().reasoning((_, text) => process.stdout.write(text));
-chat.hook().finish((_, reason) => console.log("\nFinished:", reason));
+service.stream().hook().chunks(ChunkType.Content).do((chunk) => process.stdout.write(chunk.text));
+service.stream().hook().chunks(ChunkType.Reasoning).do((chunk) => process.stdout.write(chunk.text));
+service.stream().hook().chunks(ChunkType.Finish).do((chunk) => console.log("\nFinished:", chunk.finishReason));
 
 await service.send();
 ```

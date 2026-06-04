@@ -2,16 +2,6 @@
 
 All observation is done through hooks returned by `chat.hook()`.
 
-## Streaming
-
-```ts
-chat.hook().chunk((_, text) => process.stdout.write(text));
-chat.hook().reasoning((_, text) => process.stdout.write(text));
-chat.hook().finish((_, reason) => console.log("\nFinished:", reason));
-```
-
-Stream hooks fire on every event with no filtering or limit.
-
 ## Message hooks
 
 Subscribe to messages matching a role and/or regex:
@@ -39,8 +29,8 @@ chat.hook()
 ## Disposal
 
 ```ts
-const hook = chat.hook().chunk((_, text) => process.stdout.write(text));
-hook.dispose();  // unsubscribe — safe to call multiple times
+const hook = chat.hook().message(ChatRole.User).do(cb);
+hook.dispose();  // safe to call multiple times
 ```
 
 ## Notes

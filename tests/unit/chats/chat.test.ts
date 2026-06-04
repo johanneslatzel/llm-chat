@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatRole, FinishReason, chatFromJSON, type ToolCall } from '../../../src/index.js';
-import { Chat, ChatEvent } from '../../../src/chats/chat.js';
+import { ChatRole, chatFromJSON, type ToolCall } from '../../../src/index.js';
+import { Chat } from '../../../src/chats/chat.js';
 
 describe('Chat', () => {
     describe('system message', () => {
         it('sets system message as first message', () => {
             const chat = new Chat();
             chat.system('You are a helpful assistant.');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe(ChatRole.System);
             expect(messages[0]!.content).toBe('You are a helpful assistant.');
@@ -17,7 +17,7 @@ describe('Chat', () => {
             const chat = new Chat();
             chat.system('Original system message.');
             chat.system('Updated system message.');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.content).toBe('Updated system message.');
         });
@@ -27,7 +27,7 @@ describe('Chat', () => {
             chat.system('System prompt.');
             chat.user('Hello');
             chat.assistant('Hi there');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(3);
             expect(messages[0]!.role).toBe(ChatRole.System);
             expect(messages[1]!.role).toBe(ChatRole.User);
@@ -36,16 +36,13 @@ describe('Chat', () => {
     });
 
     describe('adding messages', () => {
-        it('appends user message and emits Message event', () => {
+        it('appends user message', () => {
             const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Message, handler);
             chat.user('Hello');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe(ChatRole.User);
             expect(messages[0]!.content).toBe('Hello');
-            expect(handler).toHaveBeenCalledWith(messages[0]);
         });
 
         it('appends assistant message with optional tool_calls', () => {
@@ -56,7 +53,7 @@ describe('Chat', () => {
                 function: { name: 'get_weather', arguments: '{"city":"London"}' }
             };
             chat.assistant('Let me check', [toolCall]);
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe(ChatRole.Assistant);
             expect(messages[0]!.tool_calls).toEqual([toolCall]);
@@ -65,127 +62,37 @@ describe('Chat', () => {
         it('appends assistant message without tool_calls', () => {
             const chat = new Chat();
             chat.assistant('Sure thing');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages[0]!.tool_calls).toBeUndefined();
         });
 
         it('appends tool result message with tool_call_id', () => {
             const chat = new Chat();
             chat.tool('Result data', 'call_1');
-            const messages = chat.getMessages();
+            const messages = chat.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe(ChatRole.Tool);
             expect(messages[0]!.content).toBe('Result data');
             expect(messages[0]!.tool_call_id).toBe('call_1');
         });
-    });
 
-    describe('event system', () => {
-        it('emits Message event for user, assistant, and tool calls', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Message, handler);
-            chat.user('Hello');
-            chat.assistant('World');
-            chat.tool('Result', 'call_1');
-            expect(handler).toHaveBeenCalledTimes(3);
-        });
-
-        it('emits Chunk event', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Chunk, handler);
-            chat.chunk('Hello');
-            chat.chunk(' World');
-            expect(handler).toHaveBeenCalledTimes(2);
-            expect(handler).toHaveBeenCalledWith('Hello');
-            expect(handler).toHaveBeenCalledWith(' World');
-        });
-
-        it('emits Reasoning event', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Reasoning, handler);
-            chat.reasoning('Thinking step by step...');
-            expect(handler).toHaveBeenCalledWith('Thinking step by step...');
-        });
-
-        it('creates a ChatMessage with Reasoning role', () => {
+        it('appends reasoning message', () => {
             const chat = new Chat();
             chat.reasoning('Thinking step by step...');
-            const messages = chat.getMessages();
-            const last = messages[messages.length - 1]!;
-            expect(last.role).toBe(ChatRole.Reasoning);
-            expect(last.content).toBe('Thinking step by step...');
-        });
-
-        it('emits Message event for reasoning', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Message, handler);
-            chat.reasoning('Thinking...');
-            expect(handler).toHaveBeenCalledTimes(1);
-            expect(handler).toHaveBeenCalledWith(
-                expect.objectContaining({ role: ChatRole.Reasoning, content: 'Thinking...' })
-            );
-        });
-
-        it('emits Finish event', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Finish, handler);
-            chat.finish(FinishReason.Stop);
-            expect(handler).toHaveBeenCalledWith(FinishReason.Stop);
-        });
-
-        it('can remove a specific event handler with off()', () => {
-            const chat = new Chat();
-            const handler = vi.fn();
-            chat.on(ChatEvent.Message, handler);
-            chat.user('Hello');
-            expect(handler).toHaveBeenCalledTimes(1);
-            chat.off(ChatEvent.Message, handler);
-            chat.user('World');
-            expect(handler).toHaveBeenCalledTimes(1);
-        });
-
-        it('supports multiple listeners on the same event', () => {
-            const chat = new Chat();
-            const handler1 = vi.fn();
-            const handler2 = vi.fn();
-            chat.on(ChatEvent.Message, handler1);
-            chat.on(ChatEvent.Message, handler2);
-            chat.user('Hello');
-            expect(handler1).toHaveBeenCalledTimes(1);
-            expect(handler2).toHaveBeenCalledTimes(1);
-        });
-
-        it('does not throw when emitting with no listeners', () => {
-            const chat = new Chat();
-            expect(() => chat.chunk('test')).not.toThrow();
-            expect(() => chat.finish(FinishReason.Stop)).not.toThrow();
-        });
-
-        it('handlers can be added and removed independently', () => {
-            const chat = new Chat();
-            const handler1 = vi.fn();
-            const handler2 = vi.fn();
-            chat.on(ChatEvent.Chunk, handler1);
-            chat.on(ChatEvent.Chunk, handler2);
-            chat.off(ChatEvent.Chunk, handler1);
-            chat.chunk('test');
-            expect(handler1).not.toHaveBeenCalled();
-            expect(handler2).toHaveBeenCalledTimes(1);
+            const messages = chat.messages();
+            expect(messages).toHaveLength(1);
+            expect(messages[0]!.role).toBe(ChatRole.Reasoning);
+            expect(messages[0]!.content).toBe('Thinking step by step...');
         });
     });
 
-    describe('getMessages', () => {
+    describe('messages', () => {
         it('returns a copy of messages (immutability)', () => {
             const chat = new Chat();
             chat.user('Hello');
-            const messages = chat.getMessages();
-            messages.push({ role: ChatRole.User, content: 'Injected' });
-            expect(chat.getMessages()).toHaveLength(1);
+            const messages = chat.messages();
+            messages.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date() });
+            expect(chat.messages()).toHaveLength(1);
         });
     });
 
@@ -206,7 +113,7 @@ describe('Chat', () => {
             const chat = new Chat();
             chat.user('Hello');
             const msgs = chat.messages();
-            msgs.push({ role: ChatRole.User, content: 'Injected' });
+            msgs.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date() });
             expect(chat.messages()).toHaveLength(1);
         });
 
@@ -217,30 +124,19 @@ describe('Chat', () => {
     });
 
     describe('clear', () => {
-        it('removes all non-system messages', () => {
+        it('removes all messages including system', () => {
             const chat = new Chat();
             chat.system('System');
             chat.user('Hello');
             chat.assistant('World');
             chat.clear();
-            expect(chat.getMessages()).toHaveLength(1);
-            expect(chat.getMessages()[0]!.content).toBe('System');
-        });
-
-        it('updates system prompt when content is provided', () => {
-            const chat = new Chat();
-            chat.system('Old system');
-            chat.user('Hello');
-            chat.clear('New system');
-            const messages = chat.getMessages();
-            expect(messages).toHaveLength(1);
-            expect(messages[0]!.content).toBe('New system');
+            expect(chat.messages()).toHaveLength(0);
         });
 
         it('works on empty chat', () => {
             const chat = new Chat();
             expect(() => chat.clear()).not.toThrow();
-            expect(chat.getMessages()).toHaveLength(0);
+            expect(chat.messages()).toHaveLength(0);
         });
     });
 
@@ -276,7 +172,8 @@ describe('Chat', () => {
             const json = chat.toJSON();
             expect(json.systemMessage).toBeTruthy();
             expect(json.systemMessage!.content).toBe('System');
-            expect(json.messages).toHaveLength(2);
+            expect(json.messages).toHaveLength(1);
+            expect(json.messages[0]!.content).toBe('Hello');
         });
 
         it('fromJSON restores chat state correctly', () => {
@@ -285,23 +182,23 @@ describe('Chat', () => {
             original.user('Hello');
             const json = original.toJSON();
             const restored = Chat.fromJSON(json);
-            expect(restored.getMessages()).toHaveLength(2);
-            expect(restored.getMessages()[0]!.content).toBe('System');
-            expect(restored.getMessages()[1]!.content).toBe('Hello');
+            expect(restored.messages()).toHaveLength(2);
+            expect(restored.messages()[0]!.content).toBe('System');
+            expect(restored.messages()[1]!.content).toBe('Hello');
         });
 
         it('fromJSON handles empty messages', () => {
             const restored = Chat.fromJSON({ systemMessage: null, messages: [] });
-            expect(restored.getMessages()).toHaveLength(0);
+            expect(restored.messages()).toHaveLength(0);
         });
 
         it('fromJSON without system message works', () => {
             const json = {
                 systemMessage: null,
-                messages: [{ role: ChatRole.User, content: 'Hello' }]
+                messages: [{ role: ChatRole.User, content: 'Hello', createdAt: new Date().toISOString() }]
             };
             const restored = Chat.fromJSON(json);
-            expect(restored.getMessages()).toHaveLength(1);
+            expect(restored.messages()).toHaveLength(1);
         });
 
         it('toJSON returns shallow copies of messages', () => {
@@ -309,7 +206,7 @@ describe('Chat', () => {
             chat.user('Hello');
             const json = chat.toJSON();
             json.messages[0]!.content = 'Modified';
-            expect(chat.getMessages()[0]!.content).toBe('Hello');
+            expect(chat.messages()[0]!.content).toBe('Hello');
         });
     });
 
@@ -447,62 +344,6 @@ describe('Chat', () => {
             chat.user('trigger first');
 
             expect(onMatch).toHaveBeenCalledTimes(1);
-        });
-
-        it('chunk() hook fires callback on chunk events', () => {
-            const chat = new Chat();
-            const onChunk = vi.fn();
-            chat.hook().chunk(onChunk);
-            chat.chunk('Hello');
-            chat.chunk(' World');
-            expect(onChunk).toHaveBeenCalledTimes(2);
-            expect(onChunk).toHaveBeenCalledWith(chat, 'Hello');
-            expect(onChunk).toHaveBeenCalledWith(chat, ' World');
-        });
-
-        it('chunk() hook dispose stops callbacks', () => {
-            const chat = new Chat();
-            const onChunk = vi.fn();
-            const hook = chat.hook().chunk(onChunk);
-            hook.dispose();
-            chat.chunk('Hello');
-            expect(onChunk).not.toHaveBeenCalled();
-        });
-
-        it('reasoning() hook fires callback on reasoning events', () => {
-            const chat = new Chat();
-            const onReasoning = vi.fn();
-            chat.hook().reasoning(onReasoning);
-            chat.reasoning('Thinking step by step');
-            expect(onReasoning).toHaveBeenCalledTimes(1);
-            expect(onReasoning).toHaveBeenCalledWith(chat, 'Thinking step by step');
-        });
-
-        it('reasoning() hook dispose stops callbacks', () => {
-            const chat = new Chat();
-            const onReasoning = vi.fn();
-            const hook = chat.hook().reasoning(onReasoning);
-            hook.dispose();
-            chat.reasoning('Thinking...');
-            expect(onReasoning).not.toHaveBeenCalled();
-        });
-
-        it('finish() hook fires callback on finish events', () => {
-            const chat = new Chat();
-            const onFinish = vi.fn();
-            chat.hook().finish(onFinish);
-            chat.finish(FinishReason.Stop);
-            expect(onFinish).toHaveBeenCalledTimes(1);
-            expect(onFinish).toHaveBeenCalledWith(chat, FinishReason.Stop);
-        });
-
-        it('finish() hook dispose stops callbacks', () => {
-            const chat = new Chat();
-            const onFinish = vi.fn();
-            const hook = chat.hook().finish(onFinish);
-            hook.dispose();
-            chat.finish(FinishReason.Stop);
-            expect(onFinish).not.toHaveBeenCalled();
         });
 
         it('dispose() unsubscribes hook entirely', () => {
@@ -712,6 +553,3 @@ describe('Chat', () => {
         });
     });
 });
-
-
-

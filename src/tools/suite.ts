@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { Tool, ToolResult } from './base.js';
 import { Hook } from '../hooks/hook.js';
+import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
 
 export enum ToolEvent {
     Before = 'before',
@@ -18,17 +19,9 @@ export type ToolHookOptions = {
     tools?: string[];
 };
 
-export interface ToolSuiteInterface {
+export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
     add(tool: Tool): void;
-    before(
-        options: ToolHookOptions,
-        handler: (name: string, args: Record<string, unknown>) => void | Promise<void>
-    ): Hook;
-    after(options: ToolHookOptions, handler: (result: ToolResult) => void | Promise<void>): Hook;
-    error(
-        options: ToolHookOptions,
-        handler: (name: string, error: Error) => void | Promise<void>
-    ): Hook;
+    hook(): ToolHookBuilder;
 }
 
 abstract class BaseToolHook extends Hook {
@@ -143,22 +136,9 @@ export class ToolSuite {
         return Object.values(this.tools).map((tool) => tool.toOpenAI());
     }
 
-    before(
-        options: ToolHookOptions,
-        handler: (name: string, args: Record<string, unknown>) => void | Promise<void>
-    ): Hook {
-        return new BeforeHook(options, this, handler);
-    }
-
-    after(options: ToolHookOptions, handler: (result: ToolResult) => void | Promise<void>): Hook {
-        return new AfterHook(options, this, handler);
-    }
-
-    error(
-        options: ToolHookOptions,
-        handler: (name: string, error: Error) => void | Promise<void>
-    ): Hook {
-        return new ErrorHook(options, this, handler);
+    // Public hook entry
+    hook(): ToolHookBuilder {
+        return new ToolHookBuilder(this);
     }
 
     async executeTool(name: string, args: string): Promise<{ result: string; status: string }> {
@@ -179,6 +159,68 @@ export class ToolSuite {
             const error = err instanceof Error ? err : new Error(String(err));
             this.emit(ToolEvent.Error, name, error);
             throw error;
+        }
+    }
+}
+
+// --- Public hook builder ---
+
+export class ToolHookBuilder {
+    private _filter: string[] | undefined;
+
+    constructor(private _suite: ToolSuite) {}
+
+    filter(...names: string[]): this {
+        this._filter = names;
+        return this;
+    }
+
+    before(): ToolHookFilterBuilder<(name: string, args: Record<string, unknown>) => void> {
+        return new ToolHookFilterBuilder(this._suite, ToolEvent.Before, this._filter);
+    }
+
+    after(): ToolHookFilterBuilder<(result: ToolResult) => void> {
+        return new ToolHookFilterBuilder(this._suite, ToolEvent.After, this._filter);
+    }
+
+    error(): ToolHookFilterBuilder<(name: string, error: Error) => void> {
+        return new ToolHookFilterBuilder(this._suite, ToolEvent.Error, this._filter);
+    }
+}
+
+type ToolHookHandler = (...args: any[]) => void | Promise<void>;
+
+class ToolHookFilterBuilder<TCallback extends ToolHookHandler> extends HookBuilderBase<TCallback> {
+    constructor(
+        private _suite: ToolSuite,
+        private _event: ToolEvent,
+        private _filter: string[] | undefined
+    ) {
+        super();
+    }
+
+    do(handler: TCallback): Hook {
+        const options: ToolHookOptions = this._filter ? { tools: this._filter } : {};
+        const { _suite: suite, _event: event } = this;
+        switch (event) {
+            case ToolEvent.Before:
+                return new BeforeHook(
+                    options,
+                    suite,
+                    handler as (name: string, args: Record<string, unknown>) => void | Promise<void>
+                );
+            case ToolEvent.After:
+                return new AfterHook(
+                    options,
+                    suite,
+                    handler as (result: ToolResult) => void | Promise<void>
+                );
+            case ToolEvent.Error:
+                return new ErrorHook(
+                    options,
+                    suite,
+                    handler as (name: string, error: Error) => void | Promise<void>
+                );
         }
     }
 }

@@ -1,4 +1,5 @@
 import { Hook } from '../hooks/hook.js';
+import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
 
 export enum ChatRole {
     System = 'system',
@@ -26,13 +27,16 @@ export type ToolCall = {
 export type ChatMessage = {
     role: ChatRole;
     content: string;
+    createdAt: Date;
     tool_call_id?: string;
     tool_calls?: ToolCall[];
 };
 
+type ChatMessageJSON = Omit<ChatMessage, 'createdAt'> & { createdAt: string };
+
 export type ChatJSON = {
-    systemMessage: ChatMessage | null;
-    messages: ChatMessage[];
+    systemMessage: ChatMessageJSON | null;
+    messages: ChatMessageJSON[];
 };
 
 export type ChatMatch = {
@@ -42,137 +46,114 @@ export type ChatMatch = {
 
 // --- Public-facing interface ---
 
-export interface ChatInterface {
+export interface ChatInterface extends HasHooks<ChatHookBuilder> {
     user(content: string): void;
     system(content: string): void;
     assistant(content: string, tool_calls?: ToolCall[]): void;
     tool(content: string, tool_call_id: string): void;
     messages(): ChatMessage[];
     toJSON(): ChatJSON;
-    hook(): HookBuilder;
+    hook(): ChatHookBuilder;
 }
-
-// --- Internal event types ---
-
-export enum ChatEvent {
-    Message = 'message',
-    Reasoning = 'reasoning',
-    Chunk = 'chunk',
-    Finish = 'finish'
-}
-
-type ChatEventMap = {
-    [ChatEvent.Message]: [message: ChatMessage];
-    [ChatEvent.Reasoning]: [content: string];
-    [ChatEvent.Chunk]: [text: string];
-    [ChatEvent.Finish]: [reason: FinishReason];
-};
 
 // --- Concrete implementation ---
 
 export class Chat implements ChatInterface {
     private systemMessage: ChatMessage | null = null;
     private _messages: ChatMessage[] = [];
-    private listeners = new Map<ChatEvent, Set<(...args: unknown[]) => void>>();
+    private _messageListeners = new Set<(message: ChatMessage) => void>();
 
     system(content: string): void {
         if (this.systemMessage) {
             this.systemMessage.content = content;
         } else {
-            this.systemMessage = { role: ChatRole.System, content };
-            this._messages.unshift(this.systemMessage);
+            this.systemMessage = { role: ChatRole.System, content, createdAt: new Date() };
         }
     }
 
     user(content: string): void {
-        const message: ChatMessage = { role: ChatRole.User, content };
+        const message: ChatMessage = { role: ChatRole.User, content, createdAt: new Date() };
         this._messages.push(message);
-        this.emit(ChatEvent.Message, message);
+        this._emitMessage(message);
     }
 
     assistant(content: string, tool_calls?: ToolCall[]): void {
         const message: ChatMessage = {
             role: ChatRole.Assistant,
             content,
+            createdAt: new Date(),
             ...(tool_calls ? { tool_calls } : {})
         };
         this._messages.push(message);
-        this.emit(ChatEvent.Message, message);
+        this._emitMessage(message);
     }
 
     tool(content: string, tool_call_id: string): void {
-        const message: ChatMessage = { role: ChatRole.Tool, content, tool_call_id };
+        const message: ChatMessage = {
+            role: ChatRole.Tool,
+            content,
+            tool_call_id,
+            createdAt: new Date()
+        };
         this._messages.push(message);
-        this.emit(ChatEvent.Message, message);
-    }
-
-    chunk(text: string): void {
-        this.emit(ChatEvent.Chunk, text);
+        this._emitMessage(message);
     }
 
     reasoning(content: string): void {
-        const message: ChatMessage = { role: ChatRole.Reasoning, content };
+        const message: ChatMessage = { role: ChatRole.Reasoning, content, createdAt: new Date() };
         this._messages.push(message);
-        this.emit(ChatEvent.Reasoning, content);
-        this.emit(ChatEvent.Message, message);
-    }
-
-    finish(reason: FinishReason): void {
-        this.emit(ChatEvent.Finish, reason);
-    }
-
-    getMessages(): ChatMessage[] {
-        return [...this._messages];
+        this._emitMessage(message);
     }
 
     messages(): ChatMessage[] {
-        return this.getMessages();
+        return this.systemMessage ? [this.systemMessage, ...this._messages] : [...this._messages];
     }
 
-    clear(systemContent?: string): void {
-        if (systemContent !== undefined && this.systemMessage) {
-            this.systemMessage.content = systemContent;
-        }
-        this._messages = this.systemMessage ? [this.systemMessage] : [];
+    clear(): void {
+        this.systemMessage = null;
+        this._messages = [];
     }
 
     toJSON(): ChatJSON {
         return {
-            systemMessage: this.systemMessage ? { ...this.systemMessage } : null,
-            messages: this._messages.map((m) => ({ ...m }))
+            systemMessage: this.systemMessage
+                ? { ...this.systemMessage, createdAt: this.systemMessage.createdAt.toISOString() }
+                : null,
+            messages: this._messages.map((m) => ({
+                ...m,
+                createdAt: m.createdAt.toISOString()
+            }))
         };
     }
 
     static fromJSON(data: ChatJSON): Chat {
         const chat = new Chat();
-        chat._messages = data.messages.map((m) => ({ ...m }));
-        chat.systemMessage = data.systemMessage ? { ...data.systemMessage } : null;
+        chat._messages = data.messages.map((m) => ({
+            ...m,
+            createdAt: new Date(m.createdAt)
+        }));
+        chat.systemMessage = data.systemMessage
+            ? { ...data.systemMessage, createdAt: new Date(data.systemMessage.createdAt) }
+            : null;
         return chat;
     }
 
-    // --- Internal event system ---
-
-    on<E extends ChatEvent>(event: E, handler: (...args: ChatEventMap[E]) => void): void {
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, new Set());
-        }
-        this.listeners.get(event)!.add(handler as (...args: unknown[]) => void);
+    hook(): ChatHookBuilder {
+        return new ChatHookBuilder(this);
     }
 
-    off<E extends ChatEvent>(event: E, handler: (...args: ChatEventMap[E]) => void): void {
-        this.listeners.get(event)?.delete(handler as (...args: unknown[]) => void);
+    // --- Internal message listener system ---
+
+    onMessage(handler: (message: ChatMessage) => void): void {
+        this._messageListeners.add(handler);
     }
 
-    // --- Hook builder ---
-
-    hook(): HookBuilder {
-        return new HookBuilder(this);
+    offMessage(handler: (message: ChatMessage) => void): void {
+        this._messageListeners.delete(handler);
     }
 
-    // --- Fire an event ---
-
-    private emit<E extends ChatEvent>(event: E, ...args: ChatEventMap[E]): void {
-        this.listeners.get(event)?.forEach((handler) => handler(...args));
+    private _emitMessage(message: ChatMessage): void {
+        this._messageListeners.forEach((fn) => fn(message));
     }
 }
 
@@ -182,36 +163,28 @@ export function chatFromJSON(data: ChatJSON): ChatInterface {
     return Chat.fromJSON(data);
 }
 
-// --- Builder ---
+// --- Hook builders ---
 
-export class HookBuilder {
+export class ChatHookBuilder {
     constructor(private _chat: Chat) {}
-
-    chunk(callback: (chat: ChatInterface, text: string) => void): Hook {
-        return new ChunkHook(this._chat, callback);
-    }
-
-    reasoning(callback: (chat: ChatInterface, text: string) => void): Hook {
-        return new ReasoningHook(this._chat, callback);
-    }
-
-    finish(callback: (chat: ChatInterface, reason: FinishReason) => void): Hook {
-        return new FinishHook(this._chat, callback);
-    }
 
     message(...roles: ChatRole[]): MessageHookBuilder {
         return new MessageHookBuilder(this._chat, roles.length > 0 ? roles : undefined);
     }
 }
 
-export class MessageHookBuilder {
+export class MessageHookBuilder extends HookBuilderBase<
+    (message: ChatMessage, matches: RegExpExecArray) => void
+> {
     private _regex?: string | RegExp;
     private _maxTriggers?: number;
 
     constructor(
         private _chat: Chat,
         private _roles?: ChatRole[]
-    ) {}
+    ) {
+        super();
+    }
 
     regex(pattern: string | RegExp): this {
         this._regex = pattern;
@@ -251,7 +224,7 @@ class MessageHook extends Hook {
         this._maxTriggers = maxTriggers ?? Infinity;
         this._roles = roles;
         this._regex = typeof regex === 'string' ? new RegExp(regex) : regex;
-        chat.on(ChatEvent.Message, this._onMessage);
+        chat.onMessage(this._onMessage);
     }
 
     private _onMessage = (message: ChatMessage): void => {
@@ -279,69 +252,6 @@ class MessageHook extends Hook {
     }
 
     protected onDispose(): void {
-        this._chat.off(ChatEvent.Message, this._onMessage);
-    }
-}
-
-class ChunkHook extends Hook {
-    private _chat: Chat;
-    private _callback: (chat: ChatInterface, text: string) => void;
-
-    constructor(chat: Chat, callback: (chat: ChatInterface, text: string) => void) {
-        super();
-        this._chat = chat;
-        this._callback = callback;
-        chat.on(ChatEvent.Chunk, this._onChunk);
-    }
-
-    private _onChunk = (text: string): void => {
-        if (this.isDisposed()) return;
-        this.safeInvoke(() => this._callback(this._chat, text));
-    };
-
-    protected onDispose(): void {
-        this._chat.off(ChatEvent.Chunk, this._onChunk);
-    }
-}
-
-class ReasoningHook extends Hook {
-    private _chat: Chat;
-    private _callback: (chat: ChatInterface, text: string) => void;
-
-    constructor(chat: Chat, callback: (chat: ChatInterface, text: string) => void) {
-        super();
-        this._chat = chat;
-        this._callback = callback;
-        chat.on(ChatEvent.Reasoning, this._onReasoning);
-    }
-
-    private _onReasoning = (text: string): void => {
-        if (this.isDisposed()) return;
-        this.safeInvoke(() => this._callback(this._chat, text));
-    };
-
-    protected onDispose(): void {
-        this._chat.off(ChatEvent.Reasoning, this._onReasoning);
-    }
-}
-
-class FinishHook extends Hook {
-    private _chat: Chat;
-    private _callback: (chat: ChatInterface, reason: FinishReason) => void;
-
-    constructor(chat: Chat, callback: (chat: ChatInterface, reason: FinishReason) => void) {
-        super();
-        this._chat = chat;
-        this._callback = callback;
-        chat.on(ChatEvent.Finish, this._onFinish);
-    }
-
-    private _onFinish = (reason: FinishReason): void => {
-        if (this.isDisposed()) return;
-        this.safeInvoke(() => this._callback(this._chat, reason));
-    };
-
-    protected onDispose(): void {
-        this._chat.off(ChatEvent.Finish, this._onFinish);
+        this._chat.offMessage(this._onMessage);
     }
 }
