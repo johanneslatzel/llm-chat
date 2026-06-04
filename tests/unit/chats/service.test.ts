@@ -2,28 +2,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'node:path';
 import { FinishReason, ChatService, ChatServiceConfiguration, Tool, ToolParameters, PartialToolResult, ResultStatus } from '../../../src/index.js';
 import { StreamEvent, StreamEventType } from '../../../src/chats/service.js';
-import { ChatEvent } from '../../../src/chats/chat.js';
+import { ChunkType } from '../../../src/chats/stream.js';
 import { createTempDir, removeTempDir, createTempFile } from '../../index.js';
 
 class TestChatService extends ChatService {
-    private generator: AsyncGenerator<StreamEvent>;
+    private events: StreamEvent[];
+    private index = 0;
 
     constructor(
         events: StreamEvent[],
         config?: ChatServiceConfiguration
     ) {
         super(config);
-        this.generator = TestChatService.makeGenerator(events);
+        this.events = events;
     }
 
-    private static async *makeGenerator(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
-        for (const event of events) {
-            yield event;
+    protected async *createStream(): AsyncIterable<StreamEvent> {
+        while (this.index < this.events.length) {
+            yield this.events[this.index++]!;
         }
-    }
-
-    protected createStream(): AsyncIterable<StreamEvent> {
-        return this.generator;
     }
 }
 
@@ -81,6 +78,17 @@ describe('ChatService', () => {
         });
     });
 
+    describe('stream() getter', () => {
+        it('returns the ChunkStreamInterface', () => {
+            const service = new TestChatService([]);
+            const streamInterface = service.stream();
+            expect(streamInterface).toBeDefined();
+            expect(typeof streamInterface.chunks).toBe('function');
+            expect(typeof streamInterface.finishReason).toBe('function');
+            expect(typeof streamInterface.hook).toBe('function');
+        });
+    });
+
     describe('configuration defaults', () => {
         it('uses default maxToolCallRounds of 10', () => {
             expect(config.maxToolCallRounds).toBe(10);
@@ -109,21 +117,23 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             await service.send();
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const lastMessage = messages[messages.length - 1]!;
             expect(lastMessage.role).toBe('assistant');
             expect(lastMessage.content).toBe('Hello World');
         });
 
-        it('emits chunk events for content', async () => {
+        it('emits chunk events for content via stream hooks', async () => {
             const events: StreamEvent[] = [
                 { type: StreamEventType.Content, text: 'Hello' },
             ];
             const service = new TestChatService(events);
             const chunkHandler = vi.fn();
-            service.chatImpl.on(ChatEvent.Chunk, chunkHandler);
+            service.stream().hook().chunks(ChunkType.Content).do(chunkHandler);
             await service.send();
-            expect(chunkHandler).toHaveBeenCalledWith('Hello');
+            expect(chunkHandler).toHaveBeenCalledWith(
+                expect.objectContaining({ type: ChunkType.Content, text: 'Hello' })
+            );
         });
 
         it('handles Stop finish reason', async () => {
@@ -133,10 +143,12 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             const finishHandler = vi.fn();
-            service.chatImpl.on(ChatEvent.Finish, finishHandler);
+            service.stream().hook().chunks(ChunkType.Finish).do(finishHandler);
             await service.send();
-            expect(finishHandler).toHaveBeenCalledWith(FinishReason.Stop);
-            const messages = service.chatImpl.getMessages();
+            expect(finishHandler).toHaveBeenCalledWith(
+                expect.objectContaining({ type: ChunkType.Finish, finishReason: FinishReason.Stop })
+            );
+            const messages = service.chatImpl.messages();
             expect(messages[messages.length - 1]!.content).toBe('Final answer');
         });
 
@@ -147,8 +159,52 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             await service.send();
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages[messages.length - 1]!.content).toBe('Partial answer');
+        });
+
+        it('empty stream (0 events) does not throw', async () => {
+            const service = new TestChatService([]);
+            await expect(service.send()).resolves.toBeUndefined();
+            expect(service.chatImpl.messages()).toHaveLength(0);
+            expect(service.stream().chunks()).toHaveLength(0);
+        });
+
+        it('stream with content but no finish appends assistant message and injects artificial finish', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'No finish' },
+            ];
+            const service = new TestChatService(events);
+            const finishHandler = vi.fn();
+            service.stream().hook().chunks(ChunkType.Finish).do(finishHandler);
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages[messages.length - 1]!.role).toBe('assistant');
+            expect(messages[messages.length - 1]!.content).toBe('No finish');
+            expect(finishHandler).toHaveBeenCalledWith(
+                expect.objectContaining({ type: ChunkType.Finish, isArtificial: true })
+            );
+        });
+
+        it('stream with only tool call deltas and no finish event processes tool calls', async () => {
+            const events: StreamEvent[] = [
+                {
+                    type: StreamEventType.ToolCallDelta,
+                    index: 0,
+                    id: 'call_1',
+                    name: 'test_tool',
+                    arguments: '{}',
+                },
+            ];
+            const service = new TestChatService(events);
+            service.tools().add(new SimpleTestTool('test_tool', 'Tool result data'));
+            service.chatImpl.user('Do something');
+            await expect(service.send()).resolves.toBeUndefined();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(3);
+            const finishChunks = service.stream().chunks().filter((c) => c.type === ChunkType.Finish);
+            expect(finishChunks[0]!.isArtificial).toBe(true);
+            expect(finishChunks[0]!.finishReason).toBe(FinishReason.ToolCalls);
         });
     });
 
@@ -171,7 +227,7 @@ describe('ChatService', () => {
             service.chatImpl.user('What is the weather?');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(4);
             expect(messages[0]!.role).toBe('user');
             expect(messages[1]!.role).toBe('assistant');
@@ -200,7 +256,7 @@ describe('ChatService', () => {
             service.chatImpl.user('Do something');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const toolMessage = messages[2]!;
             expect(toolMessage.role).toBe('tool');
             expect(toolMessage.content).toContain('Error:');
@@ -225,7 +281,7 @@ describe('ChatService', () => {
             service.chatImpl.user('Do something');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const toolMessage = messages[2]!;
             expect(toolMessage.role).toBe('tool');
             expect(toolMessage.content).toContain('Error:');
@@ -254,7 +310,7 @@ describe('ChatService', () => {
 
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const toolMessage = messages[2]!;
             expect(toolMessage.role).toBe('tool');
             expect(toolMessage.content).toContain('Error:');
@@ -296,7 +352,7 @@ describe('ChatService', () => {
             service.chatImpl.user('Tool round 1');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const userMessages = messages.filter((m) => m.role === 'user');
             const interruptionMessage = userMessages.find((m) =>
                 m.content.includes('maximum number of rounds')
@@ -332,7 +388,7 @@ describe('ChatService', () => {
             service.chatImpl.user('Test');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const assistantMsg = messages[1]!;
             expect(assistantMsg.tool_calls![0]!.id).toBe('call_abc');
             expect(assistantMsg.tool_calls![0]!.function.name).toBe('multi_chunk_tool');
@@ -341,7 +397,7 @@ describe('ChatService', () => {
     });
 
     describe('reasoning events', () => {
-        it('emits reasoning content', async () => {
+        it('emits reasoning content via stream hooks', async () => {
             const events: StreamEvent[] = [
                 { type: StreamEventType.Reasoning, text: 'Thinking...' },
                 { type: StreamEventType.Content, text: 'Answer' },
@@ -349,9 +405,11 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             const reasoningHandler = vi.fn();
-            service.chatImpl.on(ChatEvent.Reasoning, reasoningHandler);
+            service.stream().hook().chunks(ChunkType.Reasoning).do(reasoningHandler);
             await service.send();
-            expect(reasoningHandler).toHaveBeenCalledWith('Thinking...');
+            expect(reasoningHandler).toHaveBeenCalledWith(
+                expect.objectContaining({ type: ChunkType.Reasoning, text: 'Thinking...' })
+            );
         });
 
         it('creates reasoning message in history before assistant', async () => {
@@ -363,7 +421,7 @@ describe('ChatService', () => {
             const service = new TestChatService(events);
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(2);
             expect(messages[0]!.role).toBe('reasoning');
             expect(messages[0]!.content).toBe('Thinking step by step');
@@ -381,7 +439,7 @@ describe('ChatService', () => {
             const service = new TestChatService(events);
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const reasoningMsg = messages.find((m) => m.role === 'reasoning');
             expect(reasoningMsg?.content).toBe('Let me think...');
         });
@@ -399,7 +457,7 @@ describe('ChatService', () => {
             const service = new TestChatService(events, config);
             await service.send();
 
-            const userMessages = service.chatImpl.getMessages().filter((m) => m.role === 'user');
+            const userMessages = service.chatImpl.messages().filter((m) => m.role === 'user');
             expect(userMessages.length).toBeGreaterThanOrEqual(0);
         });
 
@@ -414,7 +472,7 @@ describe('ChatService', () => {
             await service.send();
             await service.send();
 
-            const userMessages = service.chatImpl.getMessages().filter((m) => m.role === 'user');
+            const userMessages = service.chatImpl.messages().filter((m) => m.role === 'user');
             expect(userMessages.length).toBeGreaterThanOrEqual(0);
         });
 
@@ -433,7 +491,7 @@ describe('ChatService', () => {
                 const service = new TestChatService(events, config);
                 await service.send();
 
-                const userMessages = service.chatImpl.getMessages().filter((m) => m.role === 'user');
+                const userMessages = service.chatImpl.messages().filter((m) => m.role === 'user');
                 expect(userMessages).toHaveLength(1);
                 expect(userMessages[0]!.content).toBe('Hello from prompt');
             } finally {
@@ -456,7 +514,7 @@ describe('ChatService', () => {
                 const service = new TestChatService(events, config);
                 await service.send();
 
-                const sysMessages = service.chatImpl.getMessages().filter((m) => m.role === 'system');
+                const sysMessages = service.chatImpl.messages().filter((m) => m.role === 'system');
                 expect(sysMessages).toHaveLength(1);
                 expect(sysMessages[0]!.content).toBe('You are a helpful bot');
             } finally {
@@ -476,7 +534,7 @@ describe('ChatService', () => {
             const service = new TestChatService(events, config);
             await service.send();
 
-            const sysMessages = service.chatImpl.getMessages().filter((m) => m.role === 'system');
+            const sysMessages = service.chatImpl.messages().filter((m) => m.role === 'system');
             expect(sysMessages).toHaveLength(0);
             expect(warnSpy).toHaveBeenCalledTimes(1);
             expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load system prompt file'));
@@ -491,20 +549,35 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             await service.send();
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe('reasoning');
             expect(messages[0]!.content).toBe('Thinking step by step');
         });
 
-        it('handles unexpected finish reason gracefully (falls through without appending)', async () => {
+        it('handles unknown finish reason gracefully (falls through without appending)', async () => {
             const events: StreamEvent[] = [
                 { type: StreamEventType.Finish, reason: 'unknown' as FinishReason },
             ];
             const service = new TestChatService(events);
             await service.send();
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(0);
+        });
+
+        it('injects artificial finish chunk when stream ends without finish event', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'No finish event' },
+            ];
+            const service = new TestChatService(events);
+            const finishHandler = vi.fn();
+            service.stream().hook().chunks(ChunkType.Finish).do(finishHandler);
+            await service.send();
+            expect(finishHandler).toHaveBeenCalledTimes(1);
+            const chunk = finishHandler.mock.calls[0]![0];
+            expect(chunk.type).toBe(ChunkType.Finish);
+            expect(chunk.isArtificial).toBe(true);
+            expect(chunk.finishReason).toBe(FinishReason.Stop);
         });
     });
 
@@ -532,11 +605,66 @@ describe('ChatService', () => {
             service.chatImpl.user('Test');
             await service.send();
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             const assistantMsg = messages[1]!;
             expect(assistantMsg.tool_calls![0]!.id).toBe('call_1');
             expect(assistantMsg.tool_calls![0]!.function.name).toBe('test_tool');
             expect(assistantMsg.tool_calls![0]!.function.arguments).toBe('{"key":"value"}');
+        });
+    });
+
+    describe('stream chunks accumulation', () => {
+        it('stream contains all chunks across tool-call rounds', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Round 1 ' },
+                { type: StreamEventType.Finish, reason: FinishReason.ToolCalls },
+                { type: StreamEventType.Content, text: 'Round 2' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            service.tools().add(new SimpleTestTool('test_tool', 'result'));
+            service.chatImpl.user('test');
+            await service.send();
+
+            const chunks = service.stream().chunks();
+            const finishChunks = chunks.filter((c) => c.type === ChunkType.Finish);
+            const contentChunks = chunks.filter((c) => c.type === ChunkType.Content);
+            expect(contentChunks.length).toBe(2);
+            expect(finishChunks.length).toBe(2);
+            expect(contentChunks[0]!.text).toBe('Round 1 ');
+            expect(contentChunks[1]!.text).toBe('Round 2');
+        });
+
+        it('stream is cleared between send() calls', async () => {
+            const events1: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'First' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const events2: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Second' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            // Create two separate services since TestChatService has one event list
+            const service1 = new TestChatService(events1);
+            await service1.send();
+            expect(service1.stream().chunks()).toHaveLength(2);
+
+            // Second service simulates a fresh send
+            const service2 = new TestChatService(events2);
+            expect(service2.stream().chunks()).toHaveLength(0);
+            await service2.send();
+            expect(service2.stream().chunks()).toHaveLength(2);
+        });
+
+        it('stream.finishReason() returns the final finish reason', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Hello' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            expect(service.stream().finishReason()).toBeUndefined();
+            await service.send();
+            expect(service.stream().finishReason()).toBe(FinishReason.Stop);
         });
     });
 
@@ -552,7 +680,7 @@ describe('ChatService', () => {
                 service.chat().user('Timer expired');
             });
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(2);
             expect(messages[0]!.role).toBe('user');
             expect(messages[0]!.content).toBe('Timer expired');
@@ -567,10 +695,73 @@ describe('ChatService', () => {
                 service.chat().user('Timer expired');
             }, false);
 
-            const messages = service.chatImpl.getMessages();
+            const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(1);
             expect(messages[0]!.role).toBe('user');
             expect(messages[0]!.content).toBe('Timer expired');
+        });
+    });
+
+    describe('chunk ordering', () => {
+        it('chunks have sequential indices across types', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Reasoning, text: 'Think' },
+                { type: StreamEventType.Content, text: 'Answer' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            const chunks = service.stream().chunks();
+            expect(chunks).toHaveLength(3);
+            expect(chunks[0]!.seq).toBe(0);
+            expect(chunks[1]!.seq).toBe(1);
+            expect(chunks[2]!.seq).toBe(2);
+        });
+
+        it('FinishChunk is pushed to stream before assistant message is appended to chat', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Hello' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            const order: string[] = [];
+            service.stream().hook().chunks(ChunkType.Finish).do(() => {
+                order.push('finish');
+                const allMessages = service.chatImpl.messages();
+                const assistantMessages = allMessages.filter((m) => m.content === 'Hello');
+                expect(assistantMessages).toHaveLength(0);
+            });
+            await service.send();
+            expect(order).toEqual(['finish']);
+            const messages = service.chatImpl.messages();
+            const assistantMessages = messages.filter((m) => m.role === 'assistant' && m.content === 'Hello');
+            expect(assistantMessages).toHaveLength(1);
+        });
+    });
+
+    describe('consistency', () => {
+        it('content from stream chunks matches messages in chat history', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Reasoning, text: 'Let me think...' },
+                { type: StreamEventType.Content, text: 'The answer is 42.' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+
+            const chunks = service.stream().chunks();
+            const contentFromChunks = chunks
+                .filter((c) => c.type === ChunkType.Content)
+                .map((c) => c.text)
+                .join('');
+            expect(contentFromChunks).toBe('The answer is 42.');
+
+            const messages = service.chatImpl.messages();
+            const contentFromMessages = messages
+                .filter((m) => m.role === 'assistant')
+                .map((m) => m.content)
+                .join('');
+            expect(contentFromMessages).toBe('The answer is 42.');
         });
     });
 });

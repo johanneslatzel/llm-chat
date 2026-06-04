@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
 import { Chat, ChatInterface, FinishReason, ToolCall } from './chat.js';
+import { ChunkStream, ChunkStreamInterface } from './stream.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 
 export enum StreamEventType {
@@ -40,6 +41,7 @@ export class ChatServiceConfiguration {
 export abstract class ChatService {
     private _contextLoaded = false;
     private _sendMutex = new Mutex();
+    private _chunkStream = new ChunkStream();
     public readonly chatImpl: Chat = new Chat();
     protected _tools = new ToolSuite();
 
@@ -51,14 +53,18 @@ export abstract class ChatService {
         return this._tools;
     }
 
-    /** Returns the public-facing chat handle with a narrowed API. */
     chat(): ChatInterface {
         return this.chatImpl;
+    }
+
+    stream(): ChunkStreamInterface {
+        return this._chunkStream;
     }
 
     protected abstract createStream(): AsyncIterable<StreamEvent>;
 
     private async _send(): Promise<void> {
+        this._chunkStream.clear();
         if (
             !this._contextLoaded &&
             (this.config.systemPromptPath || this.config.userPromptPaths.length > 0)
@@ -119,14 +125,21 @@ export abstract class ChatService {
             switch (event.type) {
                 case StreamEventType.Content:
                     content += event.text;
-                    this.chatImpl.chunk(event.text);
+                    this._chunkStream.addContentChunk(event.text);
                     break;
 
                 case StreamEventType.ToolCallDelta:
                     this.accumulateToolCall(toolCallAccumulators, event);
+                    this._chunkStream.addToolCallDeltaChunk(
+                        event.arguments || '',
+                        event.index,
+                        event.id,
+                        event.name
+                    );
                     break;
 
                 case StreamEventType.Finish:
+                    this._chunkStream.addFinishChunk(event.reason);
                     await this.handleFinish(
                         content,
                         reasoningContent,
@@ -138,15 +151,23 @@ export abstract class ChatService {
 
                 case StreamEventType.Reasoning:
                     reasoningContent += event.text;
+                    this._chunkStream.addReasoningChunk(event.text);
                     break;
             }
         }
 
-        if (reasoningContent) {
-            this.chatImpl.reasoning(reasoningContent);
-        }
-        if (content) {
-            this.chatImpl.assistant(content);
+        // Stream ended without an explicit Finish event
+        const hasToolCalls = toolCallAccumulators.size > 0;
+        if (content || reasoningContent || hasToolCalls) {
+            const reason = hasToolCalls ? FinishReason.ToolCalls : FinishReason.Stop;
+            this._chunkStream.addFinishChunk(reason, true);
+            await this.handleFinish(
+                content,
+                reasoningContent,
+                toolCallAccumulators,
+                reason,
+                iteration
+            );
         }
     }
 
@@ -171,14 +192,17 @@ export abstract class ChatService {
         reason: FinishReason,
         iteration: number
     ): Promise<void> {
+        // Ordering guarantee: FinishChunk was already pushed to _chunkStream before this call.
+        // Stream hooks fired. Now append completed messages to chat.
+
         if (reasoningContent) {
             this.chatImpl.reasoning(reasoningContent);
         }
 
-        this.chatImpl.finish(reason);
-
         if (reason === FinishReason.Stop || reason === FinishReason.Length) {
-            this.chatImpl.assistant(content);
+            if (content) {
+                this.chatImpl.assistant(content);
+            }
             return;
         }
 

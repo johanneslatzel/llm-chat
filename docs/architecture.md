@@ -7,18 +7,21 @@ The library is built around four core concepts: **Chats**, **Services**, **Tools
 ```
 ChatService
  ├── Chat (ChatInterface) — message history, hooks
+ ├── ChunkStream (ChunkStreamInterface) — raw streaming chunks
  ├── ToolSuite (ToolSuiteInterface) — tool registration and dispatch
  └── send() — tool-call loop
 
 Hooks
- ├── Chat hooks (via chat.hook()) — observe stream, subscribe to messages
- └── Tool hooks (via service.tools()) — before, after, error
+ ├── Stream hooks (via service.stream().hook()) — observe raw chunks
+ ├── Chat hooks (via chat.hook()) — subscribe to messages
+ └── Tool hooks (via service.tools().hook()) — before, after, error
 ```
 
 - **Chat / ChatInterface** — the public handle for building message histories and subscribing to events. Created by `service.chat()`.
-- **ChatService** — abstract base class that manages the tool-call loop. It owns the `Chat` and tool registry. Call `service.send()` to start the request/response cycle.
+- **ChunkStream / ChunkStreamInterface** — accumulates raw streaming chunks (content, reasoning, tool-call deltas, finish) during `send()`. Accessed via `service.stream()`.
+- **ChatService** — abstract base class that manages the tool-call loop. It owns the `Chat`, `ChunkStream`, and tool registry. Call `service.send()` to start the request/response cycle.
 - **Tool** — abstract base class users extend to define custom tools.
-- **ToolSuiteInterface** — exposed via `service.tools()`, lets you add tools and attach before/after/error hooks.
-- **Hooks** — two kinds: chat hooks (`chat.hook()`) for stream/message observation, and tool hooks (`service.tools().before/after/error()`) for tool lifecycle events.
+- **ToolSuiteInterface** — exposed via `service.tools()`, lets you add tools and attach hooks via `.hook().before/after/error().do()`.
+- **Hooks** — three kinds: stream hooks (`service.stream().hook().chunks().do()`) for raw chunk observation, chat hooks (`chat.hook().message().do()`) for completed message observation, and tool hooks (`service.tools().hook().before/after/error().do()`) for tool lifecycle events.
 
 Providers (like `OpenAIChatService`) extend `ChatService` and implement `createStream()` to connect to a specific API.

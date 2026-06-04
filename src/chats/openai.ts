@@ -15,6 +15,7 @@ export class OpenAIChatServiceConfiguration {
     stop?: string | string[];
     topP?: number = parseEnvFloat('LLM_CHAT_OPENAI_TOP_P');
     filterReasoning?: boolean = true;
+    prefixWithTimestamp?: boolean = false;
 }
 
 function parseEnvInt(key: string): number | undefined {
@@ -44,14 +45,34 @@ function toFinishReason(raw: string | null | undefined): FinishReason | null {
     }
 }
 
+function toLocalISOString(d: Date): string {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const y = d.getFullYear();
+    const mo = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const h = pad(d.getHours());
+    const mi = pad(d.getMinutes());
+    const s = pad(d.getSeconds());
+    const ms = d.getMilliseconds().toString().padStart(3, '0');
+    const off = -d.getTimezoneOffset();
+    const sign = off >= 0 ? '+' : '-';
+    const tzH = pad(Math.floor(Math.abs(off) / 60));
+    const tzM = pad(Math.abs(off) % 60);
+    return `${y}-${mo}-${dd}T${h}:${mi}:${s}.${ms}${sign}${tzH}:${tzM}`;
+}
+
 function toOpenAIMessages(
     messages: ChatMessage[],
-    filterReasoning: boolean
+    filterReasoning: boolean,
+    prefixWithTimestamp: boolean
 ): ChatCompletionMessageParam[] {
     return messages
         .filter((msg) => !filterReasoning || msg.role !== ChatRole.Reasoning)
         .map((msg): ChatCompletionMessageParam => {
-            const base = { content: msg.content } as Record<string, unknown>;
+            const content = prefixWithTimestamp
+                ? `${toLocalISOString(msg.createdAt)}: ${msg.content}`
+                : msg.content;
+            const base = { content } as Record<string, unknown>;
             switch (msg.role) {
                 case ChatRole.System:
                     return { ...base, role: 'system' } as ChatCompletionMessageParam;
@@ -93,8 +114,9 @@ export class OpenAIChatService extends ChatService {
 
     protected async *createStream(): AsyncIterable<StreamEvent> {
         const messages = toOpenAIMessages(
-            this.chatImpl.getMessages(),
-            this.openAIConfig.filterReasoning ?? true
+            this.chatImpl.messages(),
+            this.openAIConfig.filterReasoning ?? true,
+            this.openAIConfig.prefixWithTimestamp ?? false
         );
         const openaiTools = this._tools.getTools();
 

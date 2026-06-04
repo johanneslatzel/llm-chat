@@ -15,3 +15,7 @@ await service.send();
 ```
 
 The base class accumulates stream events, assembles tool calls, recurses on tool responses, and errors safely.
+
+## Streaming
+
+Stream hooks are documented in [Stream hooks](stream-hooks.md).

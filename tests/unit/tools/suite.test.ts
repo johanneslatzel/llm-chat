@@ -73,42 +73,11 @@ describe('ToolSuite', () => {
         });
     });
 
-    describe('_matches edge cases', () => {
-        it('empty tools filter matches all tools (before)', async () => {
-            suite.add(new AlphaTool());
-            suite.add(new BetaTool());
-            const handler = vi.fn();
-            suite.before({ tools: [] }, handler);
-            await suite.executeTool('alpha', '{"x": "a"}');
-            await suite.executeTool('beta', '{}');
-            expect(handler).toHaveBeenCalledTimes(2);
-        });
-
-        it('empty tools filter matches all tools (after)', async () => {
-            suite.add(new AlphaTool());
-            suite.add(new BetaTool());
-            const handler = vi.fn();
-            suite.after({ tools: [] }, handler);
-            await suite.executeTool('alpha', '{"x": "a"}');
-            await suite.executeTool('beta', '{}');
-            expect(handler).toHaveBeenCalledTimes(2);
-        });
-
-        it('empty tools filter matches all tools (error)', async () => {
-            suite.add(new FailingTool());
-            suite.add(new AlphaTool());
-            const handler = vi.fn();
-            suite.error({ tools: [] }, handler);
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
-            expect(handler).toHaveBeenCalledTimes(1);
-        });
-    });
-
     describe('hooks', () => {
         it('fires before handler before tool execution', async () => {
             suite.add(new AlphaTool());
             const handler = vi.fn();
-            suite.before({}, handler);
+            suite.hook().before().do(handler);
             await suite.executeTool('alpha', '{"x": "test"}');
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('alpha', { x: 'test' });
@@ -117,7 +86,7 @@ describe('ToolSuite', () => {
         it('fires after handler after successful tool execution', async () => {
             suite.add(new AlphaTool());
             const handler = vi.fn();
-            suite.after({}, handler);
+            suite.hook().after().do(handler);
             await suite.executeTool('alpha', '{"x": "hello"}');
             expect(handler).toHaveBeenCalledTimes(1);
             const result = handler.mock.calls[0]![0];
@@ -129,7 +98,7 @@ describe('ToolSuite', () => {
         it('fires error handler on tool failure', async () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
-            suite.error({}, handler);
+            suite.hook().error().do(handler);
             await expect(suite.executeTool('failing', '{}')).rejects.toThrow('Intentional failure');
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('failing', expect.any(Error));
@@ -140,7 +109,7 @@ describe('ToolSuite', () => {
             suite.add(new AlphaTool());
             suite.add(new BetaTool());
             const handler = vi.fn();
-            suite.before({ tools: ['beta'] }, handler);
+            suite.hook().filter('beta').before().do(handler);
             await suite.executeTool('alpha', '{"x": "ignored"}');
             expect(handler).not.toHaveBeenCalled();
             await suite.executeTool('beta', '{}');
@@ -151,7 +120,7 @@ describe('ToolSuite', () => {
             suite.add(new AlphaTool());
             suite.add(new BetaTool());
             const handler = vi.fn();
-            suite.after({ tools: ['beta'] }, handler);
+            suite.hook().filter('beta').after().do(handler);
             await suite.executeTool('alpha', '{"x": "ignored"}');
             expect(handler).not.toHaveBeenCalled();
             await suite.executeTool('beta', '{}');
@@ -162,7 +131,7 @@ describe('ToolSuite', () => {
             suite.add(new FailingTool());
             suite.add(new AlphaTool());
             const handler = vi.fn();
-            suite.error({ tools: ['failing'] }, handler);
+            suite.hook().filter('failing').error().do(handler);
             await suite.executeTool('alpha', '{"x": "ok"}');
             expect(handler).not.toHaveBeenCalled();
             await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
@@ -171,14 +140,14 @@ describe('ToolSuite', () => {
 
         it('does not fire before handler when no tool executes', () => {
             const handler = vi.fn();
-            suite.before({}, handler);
+            suite.hook().before().do(handler);
             expect(handler).not.toHaveBeenCalled();
         });
 
         it('supports disposal via dispose()', async () => {
             suite.add(new AlphaTool());
             const handler = vi.fn();
-            const hook = suite.before({}, handler);
+            const hook = suite.hook().before().do(handler);
             hook.dispose();
             await suite.executeTool('alpha', '{"x": "gone"}');
             expect(handler).not.toHaveBeenCalled();
@@ -187,7 +156,7 @@ describe('ToolSuite', () => {
         it('does not fire after handler after disposal', async () => {
             suite.add(new AlphaTool());
             const handler = vi.fn();
-            const hook = suite.after({}, handler);
+            const hook = suite.hook().after().do(handler);
             hook.dispose();
             await suite.executeTool('alpha', '{"x": "gone"}');
             expect(handler).not.toHaveBeenCalled();
@@ -196,7 +165,7 @@ describe('ToolSuite', () => {
         it('wraps non-Error throws in Error on handler', async () => {
             suite.add(new ThrowsNonErrorTool());
             const handler = vi.fn();
-            suite.error({}, handler);
+            suite.hook().error().do(handler);
             await expect(suite.executeTool('throws_non_error', '{}')).rejects.toThrow('string error value');
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler.mock.calls[0]![1]).toBeInstanceOf(Error);
@@ -206,7 +175,7 @@ describe('ToolSuite', () => {
         it('does not fire error handler after disposal', async () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
-            const hook = suite.error({}, handler);
+            const hook = suite.hook().error().do(handler);
             hook.dispose();
             await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
             expect(handler).not.toHaveBeenCalled();
@@ -215,11 +184,30 @@ describe('ToolSuite', () => {
         it('error hook filter does not fire for non-matching tool name', async () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
-            suite.error({ tools: ['other_tool'] }, handler);
+            suite.hook().filter('other_tool').error().do(handler);
             await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
             expect(handler).not.toHaveBeenCalled();
         });
 
+        it('no filter matches all tools', async () => {
+            suite.add(new AlphaTool());
+            suite.add(new BetaTool());
+            const handler = vi.fn();
+            suite.hook().before().do(handler);
+            await suite.executeTool('alpha', '{"x": "a"}');
+            await suite.executeTool('beta', '{}');
+            expect(handler).toHaveBeenCalledTimes(2);
+        });
+
+        it('filter() with multiple tool names', async () => {
+            suite.add(new AlphaTool());
+            suite.add(new BetaTool());
+            const handler = vi.fn();
+            suite.hook().filter('alpha', 'beta').before().do(handler);
+            await suite.executeTool('alpha', '{"x": "a"}');
+            await suite.executeTool('beta', '{}');
+            expect(handler).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('events', () => {

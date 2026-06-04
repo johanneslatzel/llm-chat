@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,
@@ -44,10 +44,11 @@
     },
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
+        "verify": "npx tsc --noEmit && npx eslint . --max-warnings 0 && vitest run --coverage",
         "lint": "eslint . --max-warnings 0",
         "format": "prettier --write src",
-        "test": "vitest --exclude 'dist/**'",
-        "test:coverage": "vitest run --coverage --exclude 'dist/**'",
+        "test": "vitest",
+        "test:coverage": "vitest run --coverage",
         "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky"
     },
@@ -56,9 +57,6 @@
             "prettier --write",
             "eslint --max-warnings 0 --no-warn-ignored",
             "vitest related --run"
-        ],
-        "src/**": [
-            "git add docs/"
         ]
     },
     "dependencies": {
