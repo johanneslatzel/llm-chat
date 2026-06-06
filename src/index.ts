@@ -2,6 +2,7 @@ export {
     Tool,
     ToolParameters,
     ToolParameterProperty,
+    PropertyType,
     ResultStatus,
     type ToolResult,
     type PartialToolResult

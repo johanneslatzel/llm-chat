@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,

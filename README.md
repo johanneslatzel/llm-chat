@@ -32,3 +32,11 @@ MIT — see [`LICENSE`](LICENSE).
 ## Contributing
 
 Issues and PRs welcome at [github.com/johanneslatzel/llm-chat](https://github.com/johanneslatzel/llm-chat).
+
+
+## Tools
+
+| Project | Docs | npm | Description |
+|---------|------|-----|-------------|
+| [llm-chat-time](https://github.com/johanneslatzel/llm-chat-time) | [docs](https://johanneslatzel.github.io/llm-chat-time/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-time) | get datetime, use stopwatch and timers |
+| [llm-chat-web](https://github.com/johanneslatzel/llm-chat-web) | [docs](https://johanneslatzel.github.io/llm-chat-web/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-web) | search and fetch the web |

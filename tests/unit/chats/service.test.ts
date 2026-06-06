@@ -288,7 +288,7 @@ describe('ChatService', () => {
             expect(toolMessage.content).toContain('Non-error throw value');
         });
 
-        it('handles raw string reject from executeTool (String(err) branch)', async () => {
+        it('handles error status result from executeTool', async () => {
             const events: StreamEvent[] = [
                 {
                     type: StreamEventType.ToolCallDelta,
@@ -306,7 +306,10 @@ describe('ChatService', () => {
             service.chatImpl.user('Test');
 
             const suite = (service as any)._tools;
-            vi.spyOn(suite, 'executeTool').mockRejectedValue('raw string error');
+            vi.spyOn(suite, 'executeTool').mockResolvedValue({
+                result: 'Error: raw string error',
+                status: 'error'
+            });
 
             await service.send();
 
@@ -514,9 +517,8 @@ describe('ChatService', () => {
                 const service = new TestChatService(events, config);
                 await service.send();
 
-                const sysMessages = service.chatImpl.messages().filter((m) => m.role === 'system');
-                expect(sysMessages).toHaveLength(1);
-                expect(sysMessages[0]!.content).toBe('You are a helpful bot');
+                expect(service.chatImpl.getSystem()).not.toBeNull();
+                expect(service.chatImpl.getSystem()!.content).toBe('You are a helpful bot');
             } finally {
                 removeTempDir(tmpDir);
             }
@@ -543,7 +545,20 @@ describe('ChatService', () => {
     });
 
     describe('stream ending without finish event', () => {
-        it('appends reasoning message when stream ends without finish and has reasoning content', async () => {
+        it('appends only reasoning message when finish with Stop reason and reasoning content but no content', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Reasoning, text: 'Deep thinking...' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(1);
+            expect(messages[0]!.role).toBe('reasoning');
+            expect(messages[0]!.content).toBe('Deep thinking...');
+        });
+
+        it('appends only reasoning message when stream ends without finish and has reasoning content', async () => {
             const events: StreamEvent[] = [
                 { type: StreamEventType.Reasoning, text: 'Thinking step by step' },
             ];

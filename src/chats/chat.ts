@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Hook } from '../hooks/hook.js';
 import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
 
+/** Role of a single message in the conversation. */
 export enum ChatRole {
     System = 'system',
     User = 'user',
@@ -9,12 +11,14 @@ export enum ChatRole {
     Reasoning = 'reasoning'
 }
 
+/** Why the model stopped generating. */
 export enum FinishReason {
     Stop = 'stop',
     ToolCalls = 'tool_calls',
     Length = 'length'
 }
 
+/** A function call requested by the model. */
 export type ToolCall = {
     id: string;
     type: 'function';
@@ -24,6 +28,7 @@ export type ToolCall = {
     };
 };
 
+/** A single message in the conversation history. */
 export type ChatMessage = {
     role: ChatRole;
     content: string;
@@ -34,7 +39,9 @@ export type ChatMessage = {
 
 type ChatMessageJSON = Omit<ChatMessage, 'createdAt'> & { createdAt: string };
 
+/** Serialized chat format produced by {@link ChatInterface.toJSON} and accepted by {@link Chat.fromJSON}. */
 export type ChatJSON = {
+    sessionId?: string;
     systemMessage: ChatMessageJSON | null;
     messages: ChatMessageJSON[];
 };
@@ -46,37 +53,59 @@ export type ChatMatch = {
 
 // --- Public-facing interface ---
 
+/** Build and inspect chat message history. Passed to hooks and used by services. */
 export interface ChatInterface extends HasHooks<ChatHookBuilder> {
+    /** Append a user message. */
     user(content: string): void;
+    /** Set (or replace) the system prompt. Stored separately from regular messages. */
     system(content: string): void;
+    /** Append an assistant message, optionally with tool calls. */
     assistant(content: string, tool_calls?: ToolCall[]): void;
+    /** Append a tool result linked to a previous tool call. */
     tool(content: string, tool_call_id: string): void;
+    /**
+     * Return conversation messages (user, assistant, tool, reasoning).
+     * Does NOT include the system message — use {@link getSystem} for that.
+     */
     messages(): ChatMessage[];
     toJSON(): ChatJSON;
+    /** Return the system message, or `null` if none has been set. */
+    getSystem(): ChatMessage | null;
     hook(): ChatHookBuilder;
 }
 
 // --- Concrete implementation ---
 
+/** Concrete chat implementation. Stores messages and provides serialization. */
 export class Chat implements ChatInterface {
-    private systemMessage: ChatMessage | null = null;
+    /** Unique session identifier. */
+    sessionId: string = randomUUID();
+    private _systemMessage: ChatMessage | null = null;
+
+    /** @inheritDoc */
+    getSystem(): ChatMessage | null {
+        return this._systemMessage;
+    }
     private _messages: ChatMessage[] = [];
     private _messageListeners = new Set<(message: ChatMessage) => void>();
 
+    /** @inheritDoc */
     system(content: string): void {
-        if (this.systemMessage) {
-            this.systemMessage.content = content;
+        if (this._systemMessage) {
+            this._systemMessage.content = content;
         } else {
-            this.systemMessage = { role: ChatRole.System, content, createdAt: new Date() };
+            this._systemMessage = { role: ChatRole.System, content, createdAt: new Date() };
         }
     }
 
+    /** @inheritDoc */
     user(content: string): void {
         const message: ChatMessage = { role: ChatRole.User, content, createdAt: new Date() };
         this._messages.push(message);
         this._emitMessage(message);
     }
 
+    /** @inheritDoc */
     assistant(content: string, tool_calls?: ToolCall[]): void {
         const message: ChatMessage = {
             role: ChatRole.Assistant,
@@ -88,6 +117,7 @@ export class Chat implements ChatInterface {
         this._emitMessage(message);
     }
 
+    /** @inheritDoc */
     tool(content: string, tool_call_id: string): void {
         const message: ChatMessage = {
             role: ChatRole.Tool,
@@ -99,25 +129,30 @@ export class Chat implements ChatInterface {
         this._emitMessage(message);
     }
 
+    /** @inheritDoc */
     reasoning(content: string): void {
         const message: ChatMessage = { role: ChatRole.Reasoning, content, createdAt: new Date() };
         this._messages.push(message);
         this._emitMessage(message);
     }
 
+    /** @inheritDoc */
     messages(): ChatMessage[] {
-        return this.systemMessage ? [this.systemMessage, ...this._messages] : [...this._messages];
+        return [...this._messages];
     }
 
+    /** Removes all messages and the system prompt. */
     clear(): void {
-        this.systemMessage = null;
+        this._systemMessage = null;
         this._messages = [];
     }
 
+    /** @inheritDoc */
     toJSON(): ChatJSON {
         return {
-            systemMessage: this.systemMessage
-                ? { ...this.systemMessage, createdAt: this.systemMessage.createdAt.toISOString() }
+            sessionId: this.sessionId,
+            systemMessage: this._systemMessage
+                ? { ...this._systemMessage, createdAt: this._systemMessage.createdAt.toISOString() }
                 : null,
             messages: this._messages.map((m) => ({
                 ...m,
@@ -126,18 +161,23 @@ export class Chat implements ChatInterface {
         };
     }
 
+    /** Restore a chat from previously serialized JSON. */
     static fromJSON(data: ChatJSON): Chat {
         const chat = new Chat();
+        if (data.sessionId) {
+            chat.sessionId = data.sessionId;
+        }
         chat._messages = data.messages.map((m) => ({
             ...m,
             createdAt: new Date(m.createdAt)
         }));
-        chat.systemMessage = data.systemMessage
+        chat._systemMessage = data.systemMessage
             ? { ...data.systemMessage, createdAt: new Date(data.systemMessage.createdAt) }
             : null;
         return chat;
     }
 
+    /** @inheritDoc */
     hook(): ChatHookBuilder {
         return new ChatHookBuilder(this);
     }
@@ -159,20 +199,24 @@ export class Chat implements ChatInterface {
 
 // --- Standalone fromJSON ---
 
+/** Deserialize a chat from JSON. Shorthand for {@link Chat.fromJSON}. */
 export function chatFromJSON(data: ChatJSON): ChatInterface {
     return Chat.fromJSON(data);
 }
 
 // --- Hook builders ---
 
+/** Builder for chat message hooks. Start with {@link message} to filter by role. */
 export class ChatHookBuilder {
     constructor(private _chat: Chat) {}
 
+    /** Filter messages by role(s). Returns a builder to set regex/maxTriggers. */
     message(...roles: ChatRole[]): MessageHookBuilder {
         return new MessageHookBuilder(this._chat, roles.length > 0 ? roles : undefined);
     }
 }
 
+/** Builder that configures a message hook with optional regex and max triggers. */
 export class MessageHookBuilder extends HookBuilderBase<
     (message: ChatMessage, matches: RegExpExecArray) => void
 > {
@@ -186,16 +230,19 @@ export class MessageHookBuilder extends HookBuilderBase<
         super();
     }
 
+    /** Only fire when the message content matches this pattern. */
     regex(pattern: string | RegExp): this {
         this._regex = pattern;
         return this;
     }
 
+    /** Maximum number of times the hook should fire (default: unlimited). */
     maxTriggers(n: number): this {
         this._maxTriggers = n;
         return this;
     }
 
+    /** Register the hook callback. The hook fires immediately when a matching message is added. */
     do(callback: (message: ChatMessage, matches: RegExpExecArray) => void): Hook {
         return new MessageHook(this._chat, callback, this._roles, this._regex, this._maxTriggers);
     }
