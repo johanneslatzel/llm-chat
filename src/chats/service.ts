@@ -5,6 +5,7 @@ import { Chat, ChatInterface, FinishReason, ToolCall } from './chat.js';
 import { ChunkStream, ChunkStreamInterface } from './stream.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 
+/** Discriminant for stream event types yielded by a {@link ChatService}. */
 export enum StreamEventType {
     Content = 'content',
     ToolCallDelta = 'tool_call_delta',
@@ -12,6 +13,7 @@ export enum StreamEventType {
     Reasoning = 'reasoning'
 }
 
+/** A single event yielded by a service's internal stream iterator. */
 export type StreamEvent =
     | { type: StreamEventType.Content; text: string }
     | {
@@ -24,39 +26,49 @@ export type StreamEvent =
     | { type: StreamEventType.Finish; reason: FinishReason }
     | { type: StreamEventType.Reasoning; text: string };
 
+/** Configuration for a {@link ChatService}. All fields can be set via environment variables. */
 export class ChatServiceConfiguration {
+    /** Maximum number of tool-call rounds before the loop is interrupted (env: `LLM_CHAT_MAX_TOOL_CALL_ROUNDS`, default: 10). */
     maxToolCallRounds: number = (() => {
         const raw = process.env.LLM_CHAT_MAX_TOOL_CALL_ROUNDS;
         if (raw === undefined || raw === '') return 10;
         const parsed = parseInt(raw, 10);
         return isNaN(parsed) ? 10 : parsed;
     })();
+    /** Path to a file whose contents are loaded as the system prompt (env: `LLM_CHAT_SYSTEM_PROMPT`). */
     systemPromptPath: string = process.env.LLM_CHAT_SYSTEM_PROMPT ?? '';
+    /** Comma-separated paths to files whose contents are loaded as user messages (env: `LLM_CHAT_USER_PROMPTS`). */
     userPromptPaths: string[] = (process.env.LLM_CHAT_USER_PROMPTS || '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
 }
 
+/** Base class for LLM service providers. Handles the tool-call loop, prompt file loading, and concurrency. */
 export abstract class ChatService {
     private _contextLoaded = false;
     private _sendMutex = new Mutex();
     private _chunkStream = new ChunkStream();
+    /** The underlying chat instance. Access to read/write messages directly. */
     public readonly chatImpl: Chat = new Chat();
+    /** Internal tool registry. */
     protected _tools = new ToolSuite();
 
     protected constructor(
         private config: ChatServiceConfiguration = new ChatServiceConfiguration()
     ) {}
 
+    /** Access the tool registry to register tools before calling {@link send}. */
     tools(): ToolSuiteInterface {
         return this._tools;
     }
 
+    /** Access the chat interface to build message history. */
     chat(): ChatInterface {
         return this.chatImpl;
     }
 
+    /** Access the chunk stream produced by the last {@link send} call. */
     stream(): ChunkStreamInterface {
         return this._chunkStream;
     }
@@ -75,10 +87,16 @@ export abstract class ChatService {
         await this.sendLoop(0);
     }
 
+    /** Send the current chat to the provider and process the response (mutex-guarded). */
     async send(): Promise<void> {
         await this._sendMutex.runExclusive(() => this._send());
     }
 
+    /**
+     * Atomically run a mutation (e.g. inject a message) and optionally re-send.
+     * @param fn        - Function that mutates chat state (runs under the send mutex).
+     * @param sendAfter - Whether to re-send after the mutation (default: `true`).
+     */
     async interrupt(fn: () => void | Promise<void>, sendAfter?: boolean): Promise<void> {
         await this._sendMutex.runExclusive(async () => {
             await fn();
@@ -228,16 +246,11 @@ export abstract class ChatService {
             this.chatImpl.assistant(content, toolCalls);
 
             for (const tc of toolCalls) {
-                try {
-                    const result = await this._tools.executeTool(
-                        tc.function.name,
-                        tc.function.arguments
-                    );
-                    this.chatImpl.tool(result.result, tc.id);
-                } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    this.chatImpl.tool(`Error: ${msg}`, tc.id);
-                }
+                const result = await this._tools.executeTool(
+                    tc.function.name,
+                    tc.function.arguments
+                );
+                this.chatImpl.tool(result.result, tc.id);
             }
 
             await this.sendLoop(iteration + 1);

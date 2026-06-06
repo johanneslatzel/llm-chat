@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { Tool, ToolResult } from './base.js';
+import { Tool, ToolResult, ResultStatus } from './base.js';
 import { Hook } from '../hooks/hook.js';
 import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
 
@@ -19,8 +19,11 @@ export type ToolHookOptions = {
     tools?: string[];
 };
 
+/** Tool registry that stores tool instances and exposes them to the service. */
 export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
+    /** Register a tool so it can be called by the model. Throws on duplicate names. */
     add(tool: Tool): void;
+    /** Access the hook builder for tool lifecycle events. */
     hook(): ToolHookBuilder;
 }
 
@@ -141,7 +144,10 @@ export class ToolSuite {
         return new ToolHookBuilder(this);
     }
 
-    async executeTool(name: string, args: string): Promise<{ result: string; status: string }> {
+    async executeTool(
+        name: string,
+        args: string
+    ): Promise<{ result: string; status: ResultStatus }> {
         const tool = this.tools[name];
         if (!tool) {
             throw new Error("No tool registered with name '" + name + "'");
@@ -150,16 +156,19 @@ export class ToolSuite {
 
         this.emit(ToolEvent.Before, name, parsedArgs);
 
-        try {
-            const toolResult = await tool.execute(parsedArgs);
-            const result = { result: toolResult.result, status: toolResult.status };
-            this.emit(ToolEvent.After, toolResult);
-            return result;
-        } catch (err) {
-            const error = err instanceof Error ? err : new Error(String(err));
+        const toolResult = await tool.execute(parsedArgs);
+
+        if (toolResult.status === ResultStatus.Error) {
+            const error =
+                toolResult.error instanceof Error
+                    ? toolResult.error
+                    : new Error(String(toolResult.error ?? toolResult.result));
             this.emit(ToolEvent.Error, name, error);
-            throw error;
+        } else {
+            this.emit(ToolEvent.After, toolResult);
         }
+
+        return { result: toolResult.result, status: toolResult.status };
     }
 }
 

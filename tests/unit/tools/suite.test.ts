@@ -99,7 +99,8 @@ describe('ToolSuite', () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
             suite.hook().error().do(handler);
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow('Intentional failure');
+            const result = await suite.executeTool('failing', '{}');
+            expect(result).toEqual({ result: 'Error: Intentional failure', status: 'error' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('failing', expect.any(Error));
             expect(handler.mock.calls[0]![1].message).toBe('Intentional failure');
@@ -134,7 +135,8 @@ describe('ToolSuite', () => {
             suite.hook().filter('failing').error().do(handler);
             await suite.executeTool('alpha', '{"x": "ok"}');
             expect(handler).not.toHaveBeenCalled();
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
+            const result = await suite.executeTool('failing', '{}');
+            expect(result.status).toBe('error');
             expect(handler).toHaveBeenCalledTimes(1);
         });
 
@@ -166,7 +168,8 @@ describe('ToolSuite', () => {
             suite.add(new ThrowsNonErrorTool());
             const handler = vi.fn();
             suite.hook().error().do(handler);
-            await expect(suite.executeTool('throws_non_error', '{}')).rejects.toThrow('string error value');
+            const result = await suite.executeTool('throws_non_error', '{}');
+            expect(result).toEqual({ result: 'Error: string error value', status: 'error' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler.mock.calls[0]![1]).toBeInstanceOf(Error);
             expect(handler.mock.calls[0]![1].message).toBe('string error value');
@@ -177,7 +180,8 @@ describe('ToolSuite', () => {
             const handler = vi.fn();
             const hook = suite.hook().error().do(handler);
             hook.dispose();
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
+            const result = await suite.executeTool('failing', '{}');
+            expect(result.status).toBe('error');
             expect(handler).not.toHaveBeenCalled();
         });
 
@@ -185,7 +189,8 @@ describe('ToolSuite', () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
             suite.hook().filter('other_tool').error().do(handler);
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow();
+            const result = await suite.executeTool('failing', '{}');
+            expect(result.status).toBe('error');
             expect(handler).not.toHaveBeenCalled();
         });
 
@@ -236,7 +241,8 @@ describe('ToolSuite', () => {
             suite.add(new FailingTool());
             const handler = vi.fn();
             suite.on(ToolEvent.Error, handler);
-            await expect(suite.executeTool('failing', '{}')).rejects.toThrow('Intentional failure');
+            const result = await suite.executeTool('failing', '{}');
+            expect(result).toEqual({ result: 'Error: Intentional failure', status: 'error' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('failing', expect.any(Error));
             expect(handler.mock.calls[0]![1].message).toBe('Intentional failure');

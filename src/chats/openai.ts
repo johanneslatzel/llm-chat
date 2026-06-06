@@ -7,14 +7,23 @@ import { ChatMessage, ChatRole } from './chat.js';
 import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } from './service.js';
 import { FinishReason } from './chat.js';
 
+/** Configuration for {@link OpenAIChatService}. Most fields can be set via environment variables. */
 export class OpenAIChatServiceConfiguration {
+    /** The OpenAI model to use (env: `LLM_CHAT_OPENAI_DEFAULT_MODEL`). */
     model?: string = process.env.LLM_CHAT_OPENAI_DEFAULT_MODEL || undefined;
+    /** Sampling temperature (env: `LLM_CHAT_OPENAI_TEMPERATURE`). */
     temperature?: number = parseEnvFloat('LLM_CHAT_OPENAI_TEMPERATURE');
+    /** Max output tokens (env: `LLM_CHAT_OPENAI_MAX_TOKENS`). Superseded by {@link maxCompletionTokens} when both are set. */
     maxTokens?: number = parseEnvInt('LLM_CHAT_OPENAI_MAX_TOKENS');
+    /** Max completion tokens (env: `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS`). Takes precedence over {@link maxTokens}. */
     maxCompletionTokens?: number = parseEnvInt('LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS');
+    /** Stop sequences. */
     stop?: string | string[];
+    /** Top-p nucleus sampling (env: `LLM_CHAT_OPENAI_TOP_P`). */
     topP?: number = parseEnvFloat('LLM_CHAT_OPENAI_TOP_P');
+    /** Filter out reasoning messages before sending (default: `true`). */
     filterReasoning?: boolean = true;
+    /** Prepend each message with a local ISO timestamp (default: `false`). */
     prefixWithTimestamp?: boolean = false;
 }
 
@@ -98,7 +107,13 @@ function toOpenAIMessages(
         });
 }
 
+/** OpenAI provider. Extends {@link ChatService} with OpenAI-compatible streaming. */
 export class OpenAIChatService extends ChatService {
+    /**
+     * @param api         - OpenAI client instance (defaults to `new OpenAI()`).
+     * @param openAIConfig - Configuration for model, temperature, etc.
+     * @param config      - Base service configuration (prompt files, tool rounds, etc.).
+     */
     constructor(
         private api: OpenAI = new OpenAI(),
         private openAIConfig: OpenAIChatServiceConfiguration = new OpenAIChatServiceConfiguration(),
@@ -113,8 +128,11 @@ export class OpenAIChatService extends ChatService {
     }
 
     protected async *createStream(): AsyncIterable<StreamEvent> {
+        const chatMessages = this.chatImpl.messages();
+        const systemMessage = this.chatImpl.getSystem();
+        const allMessages = systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
         const messages = toOpenAIMessages(
-            this.chatImpl.messages(),
+            allMessages,
             this.openAIConfig.filterReasoning ?? true,
             this.openAIConfig.prefixWithTimestamp ?? false
         );

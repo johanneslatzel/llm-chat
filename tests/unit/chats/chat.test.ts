@@ -4,22 +4,20 @@ import { Chat } from '../../../src/chats/chat.js';
 
 describe('Chat', () => {
     describe('system message', () => {
-        it('sets system message as first message', () => {
+        it('exposes system message via systemMessage accessor', () => {
             const chat = new Chat();
             chat.system('You are a helpful assistant.');
-            const messages = chat.messages();
-            expect(messages).toHaveLength(1);
-            expect(messages[0]!.role).toBe(ChatRole.System);
-            expect(messages[0]!.content).toBe('You are a helpful assistant.');
+            expect(chat.getSystem()).not.toBeNull();
+            expect(chat.getSystem()!.role).toBe(ChatRole.System);
+            expect(chat.getSystem()!.content).toBe('You are a helpful assistant.');
         });
 
         it('updates existing system message content without duplication', () => {
             const chat = new Chat();
             chat.system('Original system message.');
             chat.system('Updated system message.');
-            const messages = chat.messages();
-            expect(messages).toHaveLength(1);
-            expect(messages[0]!.content).toBe('Updated system message.');
+            expect(chat.getSystem()).not.toBeNull();
+            expect(chat.getSystem()!.content).toBe('Updated system message.');
         });
 
         it('system message stays first after adding other messages', () => {
@@ -28,10 +26,10 @@ describe('Chat', () => {
             chat.user('Hello');
             chat.assistant('Hi there');
             const messages = chat.messages();
-            expect(messages).toHaveLength(3);
-            expect(messages[0]!.role).toBe(ChatRole.System);
-            expect(messages[1]!.role).toBe(ChatRole.User);
-            expect(messages[2]!.role).toBe(ChatRole.Assistant);
+            expect(messages).toHaveLength(2);
+            expect(chat.getSystem()!.content).toBe('System prompt.');
+            expect(messages[0]!.role).toBe(ChatRole.User);
+            expect(messages[1]!.role).toBe(ChatRole.Assistant);
         });
     });
 
@@ -103,10 +101,9 @@ describe('Chat', () => {
             chat.user('Hello');
             chat.assistant('World');
             const msgs = chat.messages();
-            expect(msgs).toHaveLength(3);
-            expect(msgs[0]!.role).toBe(ChatRole.System);
-            expect(msgs[1]!.role).toBe(ChatRole.User);
-            expect(msgs[2]!.role).toBe(ChatRole.Assistant);
+            expect(msgs).toHaveLength(2);
+            expect(msgs[0]!.role).toBe(ChatRole.User);
+            expect(msgs[1]!.role).toBe(ChatRole.Assistant);
         });
 
         it('returns a copy (immutability)', () => {
@@ -147,8 +144,17 @@ describe('Chat', () => {
             chat.user('Hello');
             const json = chat.toJSON();
             const restored = chatFromJSON(json);
-            expect(restored.messages()).toHaveLength(2);
-            expect(restored.messages()[0]!.content).toBe('System');
+            expect(restored.messages()).toHaveLength(1);
+            expect(restored.messages()[0]!.content).toBe('Hello');
+            expect(restored.getSystem()!.content).toBe('System');
+        });
+
+        it('chatFromJSON preserves sessionId', () => {
+            const chat = new Chat();
+            chat.user('Hello');
+            const json = chat.toJSON();
+            const restored = chatFromJSON(json);
+            expect(restored.toJSON().sessionId).toBe(chat.sessionId);
         });
 
         it('handles empty messages', () => {
@@ -165,15 +171,37 @@ describe('Chat', () => {
     });
 
     describe('serialization', () => {
+        it('generates a unique sessionId for each chat instance', () => {
+            const chat1 = new Chat();
+            const chat2 = new Chat();
+            expect(chat1.sessionId).toBeTruthy();
+            expect(chat2.sessionId).toBeTruthy();
+            expect(chat1.sessionId).not.toBe(chat2.sessionId);
+        });
+
         it('toJSON returns systemMessage and messages', () => {
             const chat = new Chat();
             chat.system('System');
             chat.user('Hello');
             const json = chat.toJSON();
+            expect(json.sessionId).toBe(chat.sessionId);
             expect(json.systemMessage).toBeTruthy();
             expect(json.systemMessage!.content).toBe('System');
             expect(json.messages).toHaveLength(1);
             expect(json.messages[0]!.content).toBe('Hello');
+        });
+
+        it('fromJSON preserves sessionId', () => {
+            const original = new Chat();
+            original.system('System');
+            const json = original.toJSON();
+            const restored = Chat.fromJSON(json);
+            expect(restored.sessionId).toBe(original.sessionId);
+        });
+
+        it('fromJSON generates new sessionId when JSON has none', () => {
+            const restored = Chat.fromJSON({ systemMessage: null, messages: [] });
+            expect(restored.sessionId).toBeTruthy();
         });
 
         it('fromJSON restores chat state correctly', () => {
@@ -182,9 +210,9 @@ describe('Chat', () => {
             original.user('Hello');
             const json = original.toJSON();
             const restored = Chat.fromJSON(json);
-            expect(restored.messages()).toHaveLength(2);
-            expect(restored.messages()[0]!.content).toBe('System');
-            expect(restored.messages()[1]!.content).toBe('Hello');
+            expect(restored.messages()).toHaveLength(1);
+            expect(restored.messages()[0]!.content).toBe('Hello');
+            expect(restored.getSystem()!.content).toBe('System');
         });
 
         it('fromJSON handles empty messages', () => {

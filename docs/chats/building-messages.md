@@ -8,7 +8,10 @@
 
 ## System prompt
 
-The system prompt is a single message set via `chat.system()`. Calling it again **replaces** the previous content. The system prompt is stored separately from the regular message list; `chat.messages()` prepends it when returning the full history.
+The system prompt is a single message set via `chat.system()`. Calling it again **replaces** the previous content. The system prompt is stored separately from the regular message list:
+
+- **`chat.messages()`** — returns only user, assistant, tool, and reasoning messages. The system message is **not** included.
+- **`chat.getSystem()`** — returns the system message, or `null` if none has been set.
 
 When `service.send()` sends messages to the provider, the system prompt is always the first element.
 
