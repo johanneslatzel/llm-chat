@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hook } from '../../../src/index.js';
 
 describe('Hook', () => {
@@ -17,5 +17,22 @@ describe('Hook', () => {
 
     it('is exported from the barrel', () => {
         expect(Hook).toBeDefined();
+    });
+
+    it('safeInvoke catches and logs callback errors', () => {
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        class TestHook extends Hook {
+            protected onDispose(): void {
+                // no-op
+            }
+            public safeInvoke(fn: () => void): void {
+                super.safeInvoke(fn);
+            }
+        }
+        const hook = new TestHook();
+        const err = new Error('callback failed');
+        hook.safeInvoke(() => { throw err; });
+        expect(consoleSpy).toHaveBeenCalledWith('Hook callback error:', err);
+        consoleSpy.mockRestore();
     });
 });

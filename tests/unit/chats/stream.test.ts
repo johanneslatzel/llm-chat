@@ -220,6 +220,16 @@ describe('ChunkStream', () => {
             stream.addContentChunk('Hello');
             expect(handler).not.toHaveBeenCalled();
         });
+
+        it('isDisposed guard in _onChunk prevents callback after dispose', () => {
+            const stream = new ChunkStream();
+            const handler = vi.fn();
+            const hook = stream.hook().chunks(ChunkType.Content).do(handler);
+            const internalOnChunk = (hook as any)._onChunk;
+            hook.dispose();
+            internalOnChunk({ type: ChunkType.Content, text: 'Hello', seq: 0, batch: 0 });
+            expect(handler).not.toHaveBeenCalled();
+        });
     });
 
     describe('chunks() readonly view', () => {

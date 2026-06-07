@@ -3,6 +3,7 @@ import type {
     ChatCompletionMessageParam,
     ChatCompletionCreateParamsStreaming
 } from 'openai/resources/chat/completions';
+import { envInt, envFloat, envString } from '../env.js';
 import { ChatMessage, ChatRole } from './chat.js';
 import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } from './service.js';
 import { FinishReason } from './chat.js';
@@ -10,35 +11,41 @@ import { FinishReason } from './chat.js';
 /** Configuration for {@link OpenAIChatService}. Most fields can be set via environment variables. */
 export class OpenAIChatServiceConfiguration {
     /** The OpenAI model to use (env: `LLM_CHAT_OPENAI_DEFAULT_MODEL`). */
-    model?: string = process.env.LLM_CHAT_OPENAI_DEFAULT_MODEL || undefined;
+    model?: string = envString('LLM_CHAT_OPENAI_DEFAULT_MODEL', '') || undefined;
     /** Sampling temperature (env: `LLM_CHAT_OPENAI_TEMPERATURE`). */
-    temperature?: number = parseEnvFloat('LLM_CHAT_OPENAI_TEMPERATURE');
+    temperature?: number = (() => {
+        const raw = process.env['LLM_CHAT_OPENAI_TEMPERATURE'];
+        if (raw === undefined || raw === '') return undefined;
+        const n = envFloat('LLM_CHAT_OPENAI_TEMPERATURE', NaN);
+        return Number.isNaN(n) ? undefined : n;
+    })();
     /** Max output tokens (env: `LLM_CHAT_OPENAI_MAX_TOKENS`). Superseded by {@link maxCompletionTokens} when both are set. */
-    maxTokens?: number = parseEnvInt('LLM_CHAT_OPENAI_MAX_TOKENS');
+    maxTokens?: number = (() => {
+        const raw = process.env['LLM_CHAT_OPENAI_MAX_TOKENS'];
+        if (raw === undefined || raw === '') return undefined;
+        const n = envInt('LLM_CHAT_OPENAI_MAX_TOKENS', 0, 0);
+        return n || undefined;
+    })();
     /** Max completion tokens (env: `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS`). Takes precedence over {@link maxTokens}. */
-    maxCompletionTokens?: number = parseEnvInt('LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS');
+    maxCompletionTokens?: number = (() => {
+        const raw = process.env['LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS'];
+        if (raw === undefined || raw === '') return undefined;
+        const n = envInt('LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS', 0, 0);
+        return n || undefined;
+    })();
     /** Stop sequences. */
     stop?: string | string[];
     /** Top-p nucleus sampling (env: `LLM_CHAT_OPENAI_TOP_P`). */
-    topP?: number = parseEnvFloat('LLM_CHAT_OPENAI_TOP_P');
+    topP?: number = (() => {
+        const raw = process.env['LLM_CHAT_OPENAI_TOP_P'];
+        if (raw === undefined || raw === '') return undefined;
+        const n = envFloat('LLM_CHAT_OPENAI_TOP_P', NaN);
+        return Number.isNaN(n) ? undefined : n;
+    })();
     /** Filter out reasoning messages before sending (default: `true`). */
     filterReasoning?: boolean = true;
     /** Prepend each message with a local ISO timestamp (default: `false`). */
     prefixWithTimestamp?: boolean = false;
-}
-
-function parseEnvInt(key: string): number | undefined {
-    const raw = process.env[key];
-    if (raw === undefined || raw === '') return undefined;
-    const n = parseInt(raw, 10);
-    return isNaN(n) ? undefined : n;
-}
-
-function parseEnvFloat(key: string): number | undefined {
-    const raw = process.env[key];
-    if (raw === undefined || raw === '') return undefined;
-    const n = parseFloat(raw);
-    return isNaN(n) ? undefined : n;
 }
 
 function toFinishReason(raw: string | null | undefined): FinishReason | null {

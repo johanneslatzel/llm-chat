@@ -317,6 +317,16 @@ describe('Chat', () => {
             expect(onMatch).not.toHaveBeenCalled();
         });
 
+        it('isDisposed guard in _onMessage prevents callback after dispose', () => {
+            const chat = new Chat();
+            const onMatch = vi.fn();
+            const hook = chat.hook().message(ChatRole.User).regex(/hello/).do((message, matches) => onMatch(message, matches));
+            const internalOnMessage = (hook as any)._onMessage;
+            hook.dispose();
+            internalOnMessage({ role: ChatRole.User, content: 'hello', createdAt: new Date() });
+            expect(onMatch).not.toHaveBeenCalled();
+        });
+
         it('dispose() does not throw if called twice', () => {
             const chat = new Chat();
             const hook = chat.hook().message(ChatRole.User).regex(/hello/).do(() => {});

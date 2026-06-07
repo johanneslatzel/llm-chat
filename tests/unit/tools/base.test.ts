@@ -127,6 +127,13 @@ describe('ToolParameters', () => {
         expect(params.required).toBeUndefined();
     });
 
+    it('toJSON omits required when not set', () => {
+        const params = new ToolParameters({ name: new ToolParameterProperty('A name') });
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json.required).toBeUndefined();
+        expect(json.properties.name).toBeDefined();
+    });
+
     it('toJSON generates proper JSON Schema', () => {
         const params = new ToolParameters(
             {

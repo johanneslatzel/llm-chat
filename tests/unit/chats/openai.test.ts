@@ -298,6 +298,13 @@ describe('OpenAIChatService', () => {
             expect(cfg.maxCompletionTokens).toBeUndefined();
             vi.unstubAllEnvs();
         });
+
+        it('handles NaN env values for topP', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_TOP_P', 'not-a-number');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.topP).toBeUndefined();
+            vi.unstubAllEnvs();
+        });
     });
 
     describe('toFinishReason mapping', () => {
@@ -400,6 +407,32 @@ describe('OpenAIChatService', () => {
 
             const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
             expect(callArgs.top_p).toBe(0.9);
+        });
+    });
+
+    describe('toLocalISOString negative offset', () => {
+        it('uses negative sign for timezone offset when west of UTC', async () => {
+            const mockGetTimezoneOffset = vi.fn(() => 480);
+            vi.spyOn(Date.prototype, 'getTimezoneOffset').mockImplementation(mockGetTimezoneOffset);
+
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(
+                mock,
+                { model: 'test-model', prefixWithTimestamp: true },
+                config
+            );
+            service.chatImpl.user('Hello');
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            const sentContent: string = callArgs.messages[0].content;
+            expect(sentContent).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}-\d{2}:\d{2}: Hello$/);
+
+            vi.restoreAllMocks();
         });
     });
 

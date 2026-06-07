@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
+import { envInt, envString } from '../env.js';
 import { Chat, ChatInterface, FinishReason, ToolCall } from './chat.js';
 import { ChunkStream, ChunkStreamInterface } from './stream.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
@@ -29,16 +30,11 @@ export type StreamEvent =
 /** Configuration for a {@link ChatService}. All fields can be set via environment variables. */
 export class ChatServiceConfiguration {
     /** Maximum number of tool-call rounds before the loop is interrupted (env: `LLM_CHAT_MAX_TOOL_CALL_ROUNDS`, default: 10). */
-    maxToolCallRounds: number = (() => {
-        const raw = process.env.LLM_CHAT_MAX_TOOL_CALL_ROUNDS;
-        if (raw === undefined || raw === '') return 10;
-        const parsed = parseInt(raw, 10);
-        return isNaN(parsed) ? 10 : parsed;
-    })();
+    maxToolCallRounds: number = envInt('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 10);
     /** Path to a file whose contents are loaded as the system prompt (env: `LLM_CHAT_SYSTEM_PROMPT`). */
-    systemPromptPath: string = process.env.LLM_CHAT_SYSTEM_PROMPT ?? '';
+    systemPromptPath: string = envString('LLM_CHAT_SYSTEM_PROMPT', '');
     /** Comma-separated paths to files whose contents are loaded as user messages (env: `LLM_CHAT_USER_PROMPTS`). */
-    userPromptPaths: string[] = (process.env.LLM_CHAT_USER_PROMPTS || '')
+    userPromptPaths: string[] = envString('LLM_CHAT_USER_PROMPTS', '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
