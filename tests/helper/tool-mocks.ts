@@ -1,4 +1,4 @@
-import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult } from '../../src/index.js';
+import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult, type ToolPackage } from '../../src/index.js';
 
 export class AlphaTool extends Tool {
     constructor() {
@@ -54,5 +54,23 @@ export class ThrowsNonErrorTool extends Tool {
 
     protected async onExecute(_args: Record<string, unknown>): Promise<PartialToolResult> {
         throw 'string error value';
+    }
+}
+
+export class AlphaBetaPackage implements ToolPackage {
+    tools(): Tool[] {
+        return [new AlphaTool(), new BetaTool()];
+    }
+}
+
+export class DisposablePackage implements ToolPackage {
+    public disposed = false;
+
+    tools(): Tool[] {
+        return [new AlphaTool()];
+    }
+
+    dispose(): void {
+        this.disposed = true;
     }
 }

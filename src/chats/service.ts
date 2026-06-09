@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
 import { envInt, envString } from '../env.js';
-import { Chat, ChatInterface, FinishReason, ToolCall } from './chat.js';
+import { Chat, ChatInterface, FinishReason, MessageWriter, ToolCall } from './chat.js';
+import { MessageQueue } from './queue.js';
 import { ChunkStream, ChunkStreamInterface } from './stream.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 
@@ -45,6 +46,9 @@ export abstract class ChatService {
     private _contextLoaded = false;
     private _sendMutex = new Mutex();
     private _chunkStream = new ChunkStream();
+    private _abortController: AbortController | null = null;
+    private _messageQueue = new MessageQueue();
+    private _needsResend = false;
     /** The underlying chat instance. Access to read/write messages directly. */
     public readonly chatImpl: Chat = new Chat();
     /** Internal tool registry. */
@@ -64,42 +68,63 @@ export abstract class ChatService {
         return this.chatImpl;
     }
 
+    /** Access the message queue to stage messages for the next {@link send}. */
+    queue(): MessageWriter {
+        return this._messageQueue;
+    }
+
+    /**
+     * Check whether the service needs a re-send after {@link interrupt}.
+     * Returns `true` if `interrupt(true)` was called and no `send()` has occurred since.
+     */
+    needsResend(): boolean {
+        return this._needsResend;
+    }
+
     /** Access the chunk stream produced by the last {@link send} call. */
     stream(): ChunkStreamInterface {
         return this._chunkStream;
     }
 
-    protected abstract createStream(): AsyncIterable<StreamEvent>;
+    protected abstract createStream(signal?: AbortSignal): AsyncIterable<StreamEvent>;
 
     private async _send(): Promise<void> {
-        this._chunkStream.clear();
-        if (
-            !this._contextLoaded &&
-            (this.config.systemPromptPath || this.config.userPromptPaths.length > 0)
-        ) {
-            await this.loadPromptFiles();
-            this._contextLoaded = true;
+        this._abortController = new AbortController();
+        try {
+            this._chunkStream.clear();
+            if (
+                !this._contextLoaded &&
+                (this.config.systemPromptPath || this.config.userPromptPaths.length > 0)
+            ) {
+                await this.loadPromptFiles();
+                this._contextLoaded = true;
+            }
+            await this.sendLoop(0);
+        } finally {
+            this._abortController = null;
         }
-        await this.sendLoop(0);
     }
 
-    /** Send the current chat to the provider and process the response (mutex-guarded). */
+    /** Send the current chat to the provider and process the response (mutex-guarded). Drains the message queue first. */
     async send(): Promise<void> {
-        await this._sendMutex.runExclusive(() => this._send());
+        this._needsResend = false;
+        await this._sendMutex.runExclusive(async () => {
+            const queued = await this._messageQueue.clear();
+            if (queued.length > 0) {
+                await this.chatImpl.addAll(queued);
+            }
+            await this._send();
+        });
     }
 
     /**
-     * Atomically run a mutation (e.g. inject a message) and optionally re-send.
-     * @param fn        - Function that mutates chat state (runs under the send mutex).
-     * @param sendAfter - Whether to re-send after the mutation (default: `true`).
+     * Abort any in-flight LLM request. When `needsResend` is `true`, sets a flag
+     * so that {@link needsResend} returns `true` (cleared on next {@link send}).
+     * The caller is responsible for calling `send()` again.
      */
-    async interrupt(fn: () => void | Promise<void>, sendAfter?: boolean): Promise<void> {
-        await this._sendMutex.runExclusive(async () => {
-            await fn();
-            if (sendAfter !== false) {
-                await this._send();
-            }
-        });
+    interrupt(needsResend?: boolean): void {
+        this._abortController?.abort();
+        this._needsResend = !!needsResend;
     }
 
     private async loadPromptFiles(): Promise<void> {
@@ -107,7 +132,7 @@ export abstract class ChatService {
             const absPath = path.resolve(process.cwd(), this.config.systemPromptPath);
             try {
                 const content = await readFile(absPath, 'utf-8');
-                this.chatImpl.system(content);
+                await this.chatImpl.system(content);
             } catch {
                 console.warn(`Failed to load system prompt file: ${absPath}`);
             }
@@ -116,7 +141,7 @@ export abstract class ChatService {
             const absPath = path.resolve(process.cwd(), relPath);
             try {
                 const content = await readFile(absPath, 'utf-8');
-                this.chatImpl.user(content);
+                await this.chatImpl.user(content);
             } catch {
                 console.warn(`Failed to load user prompt file: ${absPath}`);
             }
@@ -135,39 +160,51 @@ export abstract class ChatService {
             }
         >();
 
-        for await (const event of this.createStream()) {
-            switch (event.type) {
-                case StreamEventType.Content:
-                    content += event.text;
-                    this._chunkStream.addContentChunk(event.text);
-                    break;
+        if (this._abortController?.signal.aborted) {
+            return;
+        }
 
-                case StreamEventType.ToolCallDelta:
-                    this.accumulateToolCall(toolCallAccumulators, event);
-                    this._chunkStream.addToolCallDeltaChunk(
-                        event.arguments || '',
-                        event.index,
-                        event.id,
-                        event.name
-                    );
-                    break;
+        try {
+            for await (const event of this.createStream(this._abortController?.signal)) {
+                switch (event.type) {
+                    case StreamEventType.Content:
+                        content += event.text;
+                        this._chunkStream.addContentChunk(event.text);
+                        break;
 
-                case StreamEventType.Finish:
-                    this._chunkStream.addFinishChunk(event.reason);
-                    await this.handleFinish(
-                        content,
-                        reasoningContent,
-                        toolCallAccumulators,
-                        event.reason,
-                        iteration
-                    );
-                    return;
+                    case StreamEventType.ToolCallDelta:
+                        this.accumulateToolCall(toolCallAccumulators, event);
+                        this._chunkStream.addToolCallDeltaChunk(
+                            event.arguments || '',
+                            event.index,
+                            event.id,
+                            event.name
+                        );
+                        break;
 
-                case StreamEventType.Reasoning:
-                    reasoningContent += event.text;
-                    this._chunkStream.addReasoningChunk(event.text);
-                    break;
+                    case StreamEventType.Finish:
+                        this._chunkStream.addFinishChunk(event.reason);
+                        await this.handleFinish(
+                            content,
+                            reasoningContent,
+                            toolCallAccumulators,
+                            event.reason,
+                            iteration
+                        );
+                        return;
+
+                    case StreamEventType.Reasoning:
+                        reasoningContent += event.text;
+                        this._chunkStream.addReasoningChunk(event.text);
+                        break;
+                }
             }
+        } catch (err) {
+            if (err instanceof Error && err.name === 'AbortError') {
+                this._chunkStream.addFinishChunk(FinishReason.Aborted);
+                return;
+            }
+            throw err;
         }
 
         // Stream ended without an explicit Finish event
@@ -210,20 +247,20 @@ export abstract class ChatService {
         // Stream hooks fired. Now append completed messages to chat.
 
         if (reasoningContent) {
-            this.chatImpl.reasoning(reasoningContent);
+            await this.chatImpl.reasoning(reasoningContent);
         }
 
         if (reason === FinishReason.Stop || reason === FinishReason.Length) {
             if (content) {
-                this.chatImpl.assistant(content);
+                await this.chatImpl.assistant(content);
             }
             return;
         }
 
         if (reason === FinishReason.ToolCalls) {
             if (iteration >= this.config.maxToolCallRounds) {
-                this.chatImpl.assistant(content);
-                this.chatImpl.user(
+                await this.chatImpl.assistant(content);
+                await this.chatImpl.user(
                     'Your tool call loop was interrupted after reaching the maximum number of rounds. Please summarize your progress so far and continue without further tool calls.'
                 );
                 await this.sendLoop(iteration + 1);
@@ -239,14 +276,14 @@ export abstract class ChatService {
                 });
             }
 
-            this.chatImpl.assistant(content, toolCalls);
+            await this.chatImpl.assistant(content, toolCalls);
 
             for (const tc of toolCalls) {
                 const result = await this._tools.executeTool(
                     tc.function.name,
                     tc.function.arguments
                 );
-                this.chatImpl.tool(result.result, tc.id);
+                await this.chatImpl.tool(result.result, tc.id);
             }
 
             await this.sendLoop(iteration + 1);

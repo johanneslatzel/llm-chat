@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Mutex } from 'async-mutex';
 import { Hook } from '../hooks/hook.js';
 import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
 
@@ -15,7 +16,8 @@ export enum ChatRole {
 export enum FinishReason {
     Stop = 'stop',
     ToolCalls = 'tool_calls',
-    Length = 'length'
+    Length = 'length',
+    Aborted = 'aborted'
 }
 
 /** A function call requested by the model. */
@@ -53,16 +55,17 @@ export type ChatMatch = {
 
 // --- Public-facing interface ---
 
+/** Add messages to a chat or queue. All methods are async for mutex-safety. */
+export interface MessageWriter {
+    user(content: string): Promise<void>;
+    system(content: string): Promise<void>;
+    assistant(content: string, tool_calls?: ToolCall[]): Promise<void>;
+    tool(content: string, tool_call_id: string): Promise<void>;
+    reasoning(content: string): Promise<void>;
+}
+
 /** Build and inspect chat message history. Passed to hooks and used by services. */
-export interface ChatInterface extends HasHooks<ChatHookBuilder> {
-    /** Append a user message. */
-    user(content: string): void;
-    /** Set (or replace) the system prompt. Stored separately from regular messages. */
-    system(content: string): void;
-    /** Append an assistant message, optionally with tool calls. */
-    assistant(content: string, tool_calls?: ToolCall[]): void;
-    /** Append a tool result linked to a previous tool call. */
-    tool(content: string, tool_call_id: string): void;
+export interface ChatInterface extends HasHooks<ChatHookBuilder>, MessageWriter {
     /**
      * Return conversation messages (user, assistant, tool, reasoning).
      * Does NOT include the system message — use {@link getSystem} for that.
@@ -72,6 +75,7 @@ export interface ChatInterface extends HasHooks<ChatHookBuilder> {
     /** Return the system message, or `null` if none has been set. */
     getSystem(): ChatMessage | null;
     hook(): ChatHookBuilder;
+    addAll(messages: ChatMessage[]): Promise<void>;
 }
 
 // --- Concrete implementation ---
@@ -88,52 +92,77 @@ export class Chat implements ChatInterface {
     }
     private _messages: ChatMessage[] = [];
     private _messageListeners = new Set<(message: ChatMessage) => void>();
+    private _mutex = new Mutex();
 
     /** @inheritDoc */
-    system(content: string): void {
-        if (this._systemMessage) {
-            this._systemMessage.content = content;
-        } else {
-            this._systemMessage = { role: ChatRole.System, content, createdAt: new Date() };
-        }
+    async system(content: string): Promise<void> {
+        await this._mutex.runExclusive(() => {
+            if (this._systemMessage) {
+                this._systemMessage.content = content;
+            } else {
+                this._systemMessage = { role: ChatRole.System, content, createdAt: new Date() };
+            }
+        });
     }
 
     /** @inheritDoc */
-    user(content: string): void {
+    async user(content: string): Promise<void> {
         const message: ChatMessage = { role: ChatRole.User, content, createdAt: new Date() };
-        this._messages.push(message);
+        await this._mutex.runExclusive(() => this._messages.push(message));
         this._emitMessage(message);
     }
 
     /** @inheritDoc */
-    assistant(content: string, tool_calls?: ToolCall[]): void {
+    async assistant(content: string, tool_calls?: ToolCall[]): Promise<void> {
         const message: ChatMessage = {
             role: ChatRole.Assistant,
             content,
             createdAt: new Date(),
             ...(tool_calls ? { tool_calls } : {})
         };
-        this._messages.push(message);
+        await this._mutex.runExclusive(() => this._messages.push(message));
         this._emitMessage(message);
     }
 
     /** @inheritDoc */
-    tool(content: string, tool_call_id: string): void {
+    async tool(content: string, tool_call_id: string): Promise<void> {
         const message: ChatMessage = {
             role: ChatRole.Tool,
             content,
             tool_call_id,
             createdAt: new Date()
         };
-        this._messages.push(message);
+        await this._mutex.runExclusive(() => this._messages.push(message));
         this._emitMessage(message);
     }
 
     /** @inheritDoc */
-    reasoning(content: string): void {
+    async reasoning(content: string): Promise<void> {
         const message: ChatMessage = { role: ChatRole.Reasoning, content, createdAt: new Date() };
-        this._messages.push(message);
+        await this._mutex.runExclusive(() => this._messages.push(message));
         this._emitMessage(message);
+    }
+
+    /** @inheritDoc */
+    async addAll(messages: ChatMessage[]): Promise<void> {
+        const toEmit: ChatMessage[] = [];
+        await this._mutex.runExclusive(() => {
+            for (const msg of messages) {
+                if (msg.role === ChatRole.System) {
+                    if (this._systemMessage) {
+                        this._systemMessage.content = msg.content;
+                    } else {
+                        this._systemMessage = { ...msg };
+                    }
+                } else {
+                    this._messages.push(msg);
+                    toEmit.push(msg);
+                }
+            }
+        });
+        for (const msg of toEmit) {
+            this._emitMessage(msg);
+        }
     }
 
     /** @inheritDoc */

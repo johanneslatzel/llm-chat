@@ -7,8 +7,14 @@ export {
     type ToolResult,
     type PartialToolResult
 } from './tools/base.js';
-export type { ToolSuiteInterface } from './tools/suite.js';
-export type { ChatInterface, ToolCall, ChatMessage, ChatJSON } from './chats/chat.js';
+export type { ToolSuiteInterface, ToolPackage } from './tools/suite.js';
+export type {
+    ChatInterface,
+    MessageWriter,
+    ToolCall,
+    ChatMessage,
+    ChatJSON
+} from './chats/chat.js';
 export type { ChunkStreamInterface } from './chats/stream.js';
 export {
     ChatRole,

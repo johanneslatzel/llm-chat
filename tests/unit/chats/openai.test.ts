@@ -191,8 +191,8 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
-            service.chatImpl.system('You are a bot');
-            service.chatImpl.user('Hello');
+            await service.chatImpl.system('You are a bot');
+            await service.chatImpl.user('Hello');
 
             await (service as any).createStream().next();
 
@@ -425,7 +425,7 @@ describe('OpenAIChatService', () => {
                 { model: 'test-model', prefixWithTimestamp: true },
                 config
             );
-            service.chatImpl.user('Hello');
+            await service.chatImpl.user('Hello');
             await (service as any).createStream().next();
 
             const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
@@ -444,10 +444,10 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
-            service.chatImpl.system('System');
-            service.chatImpl.user('User');
-            service.chatImpl.assistant('Assistant reply', [{ id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }]);
-            service.chatImpl.tool('Tool result', 'call_1');
+            await service.chatImpl.system('System');
+            await service.chatImpl.user('User');
+            await service.chatImpl.assistant('Assistant reply', [{ id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }]);
+            await service.chatImpl.tool('Tool result', 'call_1');
 
             await (service as any).createStream().next();
 
@@ -472,8 +472,8 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, openAIConfig, config);
-            service.chatImpl.reasoning('Let me think...');
-            service.chatImpl.user('Hello');
+            await service.chatImpl.reasoning('Let me think...');
+            await service.chatImpl.user('Hello');
 
             await (service as any).createStream().next();
 
@@ -491,8 +491,8 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
-            service.chatImpl.reasoning('Thinking...');
-            service.chatImpl.user('Hello');
+            await service.chatImpl.reasoning('Thinking...');
+            await service.chatImpl.user('Hello');
 
             await (service as any).createStream().next();
 
@@ -512,7 +512,7 @@ describe('OpenAIChatService', () => {
                 { model: 'test-model', prefixWithTimestamp: true },
                 config
             );
-            service.chatImpl.user('Hello');
+            await service.chatImpl.user('Hello');
             await (service as any).createStream().next();
 
             const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];

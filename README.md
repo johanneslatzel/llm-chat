@@ -40,5 +40,5 @@ Issues and PRs welcome at [github.com/johanneslatzel/llm-chat](https://github.co
 |---------|------|-----|-------------|
 | [llm-chat-time](https://github.com/johanneslatzel/llm-chat-time) | [docs](https://johanneslatzel.github.io/llm-chat-time/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-time) | get datetime, use stopwatch and timers |
 | [llm-chat-web](https://github.com/johanneslatzel/llm-chat-web) | [docs](https://johanneslatzel.github.io/llm-chat-web/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-web) | search and fetch the web |
-| [llm-chat-file](https://github.com/johanneslatzel/llm-chat-file) | [docs](https://johanneslatzel.github.io/llm-chat-file/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-file) | search and fetch the web |
-| [llm-chat-skill](https://github.com/johanneslatzel/llm-chat-skill) | [docs](https://johanneslatzel.github.io/llm-chat-skill/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-skill) | search and fetch the web |
+| [llm-chat-file](https://github.com/johanneslatzel/llm-chat-file) | [docs](https://johanneslatzel.github.io/llm-chat-file/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-file) | read/write files and folders |
+| [llm-chat-skill](https://github.com/johanneslatzel/llm-chat-skill) | [docs](https://johanneslatzel.github.io/llm-chat-skill/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-skill) | load and manage skills |

@@ -17,7 +17,7 @@ class TestChatService extends ChatService {
         this.events = events;
     }
 
-    protected async *createStream(): AsyncIterable<StreamEvent> {
+    protected async *createStream(_signal?: AbortSignal): AsyncIterable<StreamEvent> {
         while (this.index < this.events.length) {
             yield this.events[this.index++]!;
         }
@@ -198,7 +198,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('test_tool', 'Tool result data'));
-            service.chatImpl.user('Do something');
+            await service.chatImpl.user('Do something');
             await expect(service.send()).resolves.toBeUndefined();
             const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(3);
@@ -224,7 +224,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('test_tool', 'Tool result data'));
-            service.chatImpl.user('What is the weather?');
+            await service.chatImpl.user('What is the weather?');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -253,7 +253,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new FailingTestTool());
-            service.chatImpl.user('Do something');
+            await service.chatImpl.user('Do something');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -278,7 +278,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new ThrowsStringTestTool());
-            service.chatImpl.user('Do something');
+            await service.chatImpl.user('Do something');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -303,7 +303,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('test_tool', 'Result'));
-            service.chatImpl.user('Test');
+            await service.chatImpl.user('Test');
 
             const suite = (service as any)._tools;
             vi.spyOn(suite, 'executeTool').mockResolvedValue({
@@ -352,7 +352,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events, config);
             service.tools().add(new SimpleTestTool('loop_tool', 'Result'));
-            service.chatImpl.user('Tool round 1');
+            await service.chatImpl.user('Tool round 1');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -388,7 +388,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('multi_chunk_tool', 'Done'));
-            service.chatImpl.user('Test');
+            await service.chatImpl.user('Test');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -617,7 +617,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('test_tool', 'Result'));
-            service.chatImpl.user('Test');
+            await service.chatImpl.user('Test');
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -638,7 +638,7 @@ describe('ChatService', () => {
             ];
             const service = new TestChatService(events);
             service.tools().add(new SimpleTestTool('test_tool', 'result'));
-            service.chatImpl.user('test');
+            await service.chatImpl.user('test');
             await service.send();
 
             const chunks = service.stream().chunks();
@@ -684,16 +684,18 @@ describe('ChatService', () => {
     });
 
     describe('interrupt', () => {
-        it('injects a user message and re-sends when sendAfter is true (default)', async () => {
+        it('queues a message then re-sends with interrupt(true)', async () => {
             const events: StreamEvent[] = [
                 { type: StreamEventType.Content, text: 'Interrupt processed' },
                 { type: StreamEventType.Finish, reason: FinishReason.Stop },
             ];
             const service = new TestChatService(events);
 
-            await service.interrupt(() => {
-                service.chat().user('Timer expired');
-            });
+            await service.queue().user('Timer expired');
+            service.interrupt(true);
+            expect(service.needsResend()).toBe(true);
+
+            await service.send();
 
             const messages = service.chatImpl.messages();
             expect(messages).toHaveLength(2);
@@ -703,17 +705,84 @@ describe('ChatService', () => {
             expect(messages[1]!.content).toBe('Interrupt processed');
         });
 
-        it('injects a user message but skips send when sendAfter is false', async () => {
+        it('interrupt without resend flag does not set needsResend', () => {
             const service = new TestChatService([]);
+            service.interrupt();
+            expect(service.needsResend()).toBe(false);
+        });
 
-            await service.interrupt(() => {
-                service.chat().user('Timer expired');
-            }, false);
+        it('needsResend is reset after send()', async () => {
+            const service = new TestChatService([]);
+            service.interrupt(true);
+            expect(service.needsResend()).toBe(true);
+            await service.send();
+            expect(service.needsResend()).toBe(false);
+        });
+
+        it('needsResend stays true until send() clears it', () => {
+            const service = new TestChatService([]);
+            service.interrupt(true);
+            expect(service.needsResend()).toBe(true);
+            expect(service.needsResend()).toBe(true);
+        });
+
+        it('interrupt without send flag does not drain the queue — subsequent send does', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'After interrupt' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+
+            await service.queue().user('Timer expired');
+            service.interrupt();
+
+            expect(service.chatImpl.messages()).toHaveLength(0);
+
+            await service.send();
 
             const messages = service.chatImpl.messages();
-            expect(messages).toHaveLength(1);
+            expect(messages).toHaveLength(2);
             expect(messages[0]!.role).toBe('user');
             expect(messages[0]!.content).toBe('Timer expired');
+            expect(messages[1]!.role).toBe('assistant');
+            expect(messages[1]!.content).toBe('After interrupt');
+        });
+
+        it('cancels an in-flight send', async () => {
+            class HangingTestChatService extends ChatService {
+                constructor() {
+                    super();
+                }
+
+                protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
+                    yield { type: StreamEventType.Content, text: 'First' };
+                    await new Promise<void>((resolve) => {
+                        if (signal?.aborted) resolve();
+                        else signal?.addEventListener('abort', () => resolve());
+                    });
+                    throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+                }
+            }
+
+            const service = new HangingTestChatService();
+            const sendPromise = service.send();
+
+            // Let send start and consume the first event
+            await new Promise(process.nextTick);
+
+            service.interrupt();
+
+            await expect(sendPromise).resolves.toBeUndefined();
+
+            // Emitted an Aborted FinishChunk
+            expect(service.stream().finishReason()).toBe(FinishReason.Aborted);
+            const finishChunks = service.stream().chunks().filter((c) => c.type === ChunkType.Finish);
+            expect(finishChunks).toHaveLength(1);
+            expect(finishChunks[0]!.finishReason).toBe(FinishReason.Aborted);
+
+            // Stream was aborted before Finish — no messages committed
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(0);
         });
     });
 
@@ -751,6 +820,61 @@ describe('ChatService', () => {
             const messages = service.chatImpl.messages();
             const assistantMessages = messages.filter((m) => m.role === 'assistant' && m.content === 'Hello');
             expect(assistantMessages).toHaveLength(1);
+        });
+    });
+
+    describe('sendLoop edge cases', () => {
+        it('returns early when signal is already aborted on recursive entry', async () => {
+            class SlowTool extends Tool {
+                private _resolve: (() => void) | null = null;
+                waitPromise: Promise<void> = new Promise((r) => { this._resolve = r; });
+
+                constructor() {
+                    super('slow_tool', 'Slow tool', new ToolParameters({}));
+                }
+
+                protected async onExecute(_args: Record<string, unknown>): Promise<PartialToolResult> {
+                    await this.waitPromise;
+                    return { result: 'done', status: ResultStatus.Success };
+                }
+
+                finish(): void { this._resolve?.(); }
+            }
+
+            const tool = new SlowTool();
+            const events: StreamEvent[] = [
+                { type: StreamEventType.ToolCallDelta, index: 0, id: 'call_1', name: 'slow_tool', arguments: '{}' },
+                { type: StreamEventType.Finish, reason: FinishReason.ToolCalls },
+            ];
+            const service = new TestChatService(events);
+            service.tools().add(tool);
+            await service.chatImpl.user('Do something');
+
+            const sendPromise = service.send();
+
+            await new Promise(process.nextTick);
+
+            service.interrupt(true);
+
+            tool.finish();
+
+            await expect(sendPromise).resolves.toBeUndefined();
+            expect(service.needsResend()).toBe(true);
+        });
+
+        it('propagates non-AbortError from stream', async () => {
+            class ThrowingTestChatService extends ChatService {
+                constructor() {
+                    super();
+                }
+
+                protected async *createStream(): AsyncIterable<StreamEvent> {
+                    yield { type: StreamEventType.Content, text: '' };
+                    throw new SyntaxError('Bad response');
+                }
+            }
+            const service = new ThrowingTestChatService();
+            await expect(service.send()).rejects.toThrow(SyntaxError);
         });
     });
 

@@ -19,10 +19,18 @@ export type ToolHookOptions = {
     tools?: string[];
 };
 
+/** A bundle of related tools that can be registered together. */
+export interface ToolPackage {
+    /** Returns all tools in this package. */
+    tools(): Tool[];
+    /** Optional cleanup when the package is no longer needed. */
+    dispose?(): void | Promise<void>;
+}
+
 /** Tool registry that stores tool instances and exposes them to the service. */
 export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
-    /** Register a tool so it can be called by the model. Throws on duplicate names. */
-    add(tool: Tool): void;
+    /** Register a tool or tool package. Throws on duplicate names. */
+    add(item: Tool | ToolPackage): void;
     /** Access the hook builder for tool lifecycle events. */
     hook(): ToolHookBuilder;
 }
@@ -128,11 +136,17 @@ export class ToolSuite {
         this.listeners.get(event)?.forEach((handler) => handler(...args));
     }
 
-    add(tool: Tool): void {
-        if (this.tools[tool.name]) {
-            throw new Error("A tool with the name '" + tool.name + "' is already registered.");
+    add(item: Tool | ToolPackage): void {
+        if ('tools' in item) {
+            for (const tool of item.tools()) {
+                this.add(tool);
+            }
+        } else {
+            if (this.tools[item.name]) {
+                throw new Error("A tool with the name '" + item.name + "' is already registered.");
+            }
+            this.tools[item.name] = item;
         }
-        this.tools[tool.name] = tool;
     }
 
     getTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {

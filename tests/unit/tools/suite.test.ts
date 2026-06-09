@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ToolSuite, ToolEvent } from '../../../src/tools/suite.js';
-import { AlphaTool, BetaTool, FailingTool, ThrowsNonErrorTool } from '../../helper/tool-mocks.js';
+import { AlphaTool, BetaTool, FailingTool, ThrowsNonErrorTool, AlphaBetaPackage, DisposablePackage } from '../../helper/tool-mocks.js';
 import { ResultStatus, Tool, ToolParameters, type PartialToolResult } from '../../../src/index.js';
 
 describe('ToolSuite', () => {
@@ -54,6 +54,45 @@ describe('ToolSuite', () => {
 
     it('getTools returns empty array when no tools registered', () => {
         expect(suite.getTools()).toEqual([]);
+    });
+
+    describe('ToolPackage', () => {
+        it('registers all tools from a package', () => {
+            suite.add(new AlphaBetaPackage());
+            const tools = suite.getTools();
+            expect(tools).toHaveLength(2);
+            const names = tools.map((t) => t.function.name).sort();
+            expect(names).toEqual(['alpha', 'beta']);
+        });
+
+        it('throws on duplicate when package tool conflicts with existing tool', () => {
+            suite.add(new AlphaTool());
+            expect(() => suite.add(new AlphaBetaPackage())).toThrow(
+                "A tool with the name 'alpha' is already registered."
+            );
+        });
+
+        it('tools from a package work with executeTool', async () => {
+            suite.add(new AlphaBetaPackage());
+            const result = await suite.executeTool('alpha', '{"x": "pkg"}');
+            expect(result.result).toBe('Alpha: pkg');
+            expect(result.status).toBe('success');
+        });
+
+        it('tools from a package fire hooks', async () => {
+            suite.add(new AlphaBetaPackage());
+            const handler = vi.fn();
+            suite.hook().filter('beta').before().do(handler);
+            await suite.executeTool('beta', '{}');
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('package with dispose() can be cleaned up', () => {
+            const pkg = new DisposablePackage();
+            expect(pkg.disposed).toBe(false);
+            pkg.dispose();
+            expect(pkg.disposed).toBe(true);
+        });
     });
 
     describe('events - off() edge cases', () => {

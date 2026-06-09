@@ -134,7 +134,7 @@ export class OpenAIChatService extends ChatService {
         }
     }
 
-    protected async *createStream(): AsyncIterable<StreamEvent> {
+    protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
         const chatMessages = this.chatImpl.messages();
         const systemMessage = this.chatImpl.getSystem();
         const allMessages = systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
@@ -145,22 +145,25 @@ export class OpenAIChatService extends ChatService {
         );
         const openaiTools = this._tools.getTools();
 
-        const stream = await this.api.chat.completions.create({
-            model: this.openAIConfig.model!,
-            messages,
-            ...(openaiTools.length > 0 ? { tools: openaiTools } : {}),
-            ...(this.openAIConfig?.temperature !== undefined
-                ? { temperature: this.openAIConfig.temperature }
-                : {}),
-            ...(this.openAIConfig?.maxCompletionTokens !== undefined
-                ? { max_completion_tokens: this.openAIConfig.maxCompletionTokens }
-                : this.openAIConfig?.maxTokens !== undefined
-                  ? { max_tokens: this.openAIConfig.maxTokens }
-                  : {}),
-            ...(this.openAIConfig?.stop !== undefined ? { stop: this.openAIConfig.stop } : {}),
-            ...(this.openAIConfig?.topP !== undefined ? { top_p: this.openAIConfig.topP } : {}),
-            stream: true
-        } as ChatCompletionCreateParamsStreaming);
+        const stream = await this.api.chat.completions.create(
+            {
+                model: this.openAIConfig.model!,
+                messages,
+                ...(openaiTools.length > 0 ? { tools: openaiTools } : {}),
+                ...(this.openAIConfig?.temperature !== undefined
+                    ? { temperature: this.openAIConfig.temperature }
+                    : {}),
+                ...(this.openAIConfig?.maxCompletionTokens !== undefined
+                    ? { max_completion_tokens: this.openAIConfig.maxCompletionTokens }
+                    : this.openAIConfig?.maxTokens !== undefined
+                      ? { max_tokens: this.openAIConfig.maxTokens }
+                      : {}),
+                ...(this.openAIConfig?.stop !== undefined ? { stop: this.openAIConfig.stop } : {}),
+                ...(this.openAIConfig?.topP !== undefined ? { top_p: this.openAIConfig.topP } : {}),
+                stream: true
+            } as ChatCompletionCreateParamsStreaming,
+            { signal }
+        );
 
         for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta;
