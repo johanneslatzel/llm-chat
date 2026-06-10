@@ -8,3 +8,4 @@ Concrete tool implementations live in separate packages:
 - **[Defining a tool](defining-tools.md)**
 - **[Registration](registration.md)**
 - **[Tool hooks](tool-hooks.md)**
+- **[Packages](packages.md)**
