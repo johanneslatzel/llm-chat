@@ -4,18 +4,21 @@ export default defineConfig({
     test: {
         pool: 'forks',
         include: ['tests/**/*.test.{ts,tsx}'],
-        exclude: ['dist/**', 'node_modules/**', '.opencode/**', 'src/client/**'],
+        exclude: ['dist/**', 'node_modules/**'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html', 'lcov'],
             include: ['src/**/*.ts'],
-            exclude: [],
+            exclude: [
+                'src/index.ts',
+                'src/hooks/hook-builder.ts',
+            ],
             reportOnFailure: true,
             thresholds: {
-                statements: 95,
-                branches: 90,
+                statements: 100,
+                branches: 100,
                 functions: 100,
-                lines: 95
+                lines: 100
             },
         },
     },

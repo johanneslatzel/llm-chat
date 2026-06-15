@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
-import { FinishReason, OpenAIChatService, OpenAIChatServiceConfiguration, ChatServiceConfiguration, Tool, ToolParameters, ResultStatus, type PartialToolResult } from '../../../src/index.js';
+import { ChatMessageOrigin, FinishReason, OpenAIChatService, OpenAIChatServiceConfiguration, ChatServiceConfiguration, Prompt, Tool, ToolParameters, ResultStatus, type PartialToolResult } from '../../../src/index.js';
 import { createMockOpenAI, createMockOpenAIWithError, MockChunk, createChunk } from '../../index.js';
 
 class TestOpenAITool extends Tool {
@@ -191,7 +191,7 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
-            await service.chatImpl.system('You are a bot');
+            service.chatImpl.system().add(new Prompt('Title', 'You are a bot'));
             await service.chatImpl.user('Hello');
 
             await (service as any).createStream().next();
@@ -444,7 +444,7 @@ describe('OpenAIChatService', () => {
             ]);
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
-            await service.chatImpl.system('System');
+            service.chatImpl.system().add(new Prompt('Title', 'System'));
             await service.chatImpl.user('User');
             await service.chatImpl.assistant('Assistant reply', [{ id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }]);
             await service.chatImpl.tool('Tool result', 'call_1');
@@ -529,7 +529,7 @@ describe('OpenAIChatService', () => {
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
 
             vi.spyOn(service.chatImpl, 'messages').mockReturnValue([
-                { role: 'bogus_role' as any, content: 'test', createdAt: new Date() }
+                { role: 'bogus_role' as any, content: 'test', createdAt: new Date(), origin: ChatMessageOrigin.User }
             ]);
 
             await expect((service as any).createStream().next()).rejects.toThrow('Unexpected role: bogus_role');

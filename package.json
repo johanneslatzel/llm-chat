@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.4.1",
+    "version": "0.5.0",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,
@@ -49,6 +49,8 @@
         "format": "prettier --write src",
         "test": "vitest",
         "test:coverage": "vitest run --coverage",
+        "clean:pack": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify && npm run build && npm pack",
+        "clean:install": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify",
         "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky"
     },

@@ -4,10 +4,11 @@ export {
     ToolParameterProperty,
     PropertyType,
     ResultStatus,
+    ResultBuilder,
     type ToolResult,
     type PartialToolResult
 } from './tools/base.js';
-export type { ToolSuiteInterface, ToolPackage } from './tools/suite.js';
+export { ToolPackage, type ToolSuiteInterface } from './tools/suite.js';
 export type {
     ChatInterface,
     MessageWriter,
@@ -18,11 +19,13 @@ export type {
 export type { ChunkStreamInterface } from './chats/stream.js';
 export {
     ChatRole,
+    ChatMessageOrigin,
     FinishReason,
     ChatHookBuilder,
     MessageHookBuilder,
     chatFromJSON
 } from './chats/chat.js';
+export { Prompt, PromptContainer } from './chats/system-prompt.js';
 export { ChatServiceConfiguration, ChatService, StreamEventType } from './chats/service.js';
 export type { StreamEvent } from './chats/service.js';
 export { OpenAIChatServiceConfiguration, OpenAIChatService } from './chats/openai.js';
@@ -34,5 +37,6 @@ export type {
     ContentChunk,
     ReasoningChunk,
     ToolCallDeltaChunk,
-    FinishChunk
+    FinishChunk,
+    StreamSummary
 } from './chats/stream.js';

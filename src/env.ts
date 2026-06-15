@@ -17,3 +17,8 @@ export function envFloat(key: string, fallback: number, min?: number): number {
 export function envString(key: string, fallback: string): string {
     return process.env[key] ?? fallback;
 }
+
+export function envOptionalString(key: string): string | undefined {
+    const val = process.env[key];
+    return val?.trim() || undefined;
+}

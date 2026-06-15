@@ -23,4 +23,7 @@ service.tools().hook().error().do((name, error) => console.error(`Failed: ${erro
 
 Each returns a `Hook` — call `.dispose()` to unsubscribe.
 
+`service.tools().clear()` unregisters all tool event listeners alongside
+removing registered tools. Pass `retainHooks: true` to preserve listeners.
+
 Before-hooks receive the actual `args` object — mutations in-place propagate to the tool. After- and error-hooks are observers (mutations don't affect the returned result).

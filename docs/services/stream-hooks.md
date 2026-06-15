@@ -52,7 +52,11 @@ const allChunks = service.stream().chunks();
 const reason = service.stream().finishReason();
 ```
 
-The stream is automatically cleared at the start of each `send()` call.
+The stream state (chunks, seq, batch) is automatically cleared at the start
+of each `send()` call. Chunk listeners are preserved across sends — hooks
+registered on the stream survive multiple `send()` rounds within the same
+conversation. To fully remove stream hooks, call `service.stream().clear()` or
+`service.clear()`.
 
 ## Ordering guarantee
 

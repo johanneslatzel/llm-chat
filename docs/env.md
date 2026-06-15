@@ -31,5 +31,11 @@ Read at `OpenAIChatService` construction:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_CHAT_SYSTEM_PROMPT` | `""` | File path for system prompt |
+| `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general` |
 | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
+
+## JSON hooks
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_CHAT_HOOKS_DIR` | none | Directory containing `.json` hook definition files (auto-loaded on init/send) |

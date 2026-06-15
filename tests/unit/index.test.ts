@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    ChatMessageOrigin,
     ChatRole,
     FinishReason,
     ChatServiceConfiguration,
@@ -13,6 +14,7 @@ import {
 
 describe('package exports', () => {
     it('exports all expected symbols', () => {
+        expect(ChatMessageOrigin).toBeDefined();
         expect(ChatRole).toBeDefined();
         expect(FinishReason).toBeDefined();
         expect(ChatServiceConfiguration).toBeDefined();

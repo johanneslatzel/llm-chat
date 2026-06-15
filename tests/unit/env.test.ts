@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { envInt, envFloat, envString } from '../../src/env.js';
+import { envInt, envFloat, envString, envOptionalString } from '../../src/env.js';
 
 describe('envInt', () => {
     it('returns the parsed integer when env var is set', () => {
@@ -80,5 +80,29 @@ describe('envString', () => {
 
     it('returns fallback when env var is unset', () => {
         expect(envString('MISSING_STR', 'fallback')).toBe('fallback');
+    });
+});
+
+describe('envOptionalString', () => {
+    it('returns the env var value when set', () => {
+        vi.stubEnv('TEST_OPT', 'my-value');
+        expect(envOptionalString('TEST_OPT')).toBe('my-value');
+        vi.unstubAllEnvs();
+    });
+
+    it('returns undefined when env var is unset', () => {
+        expect(envOptionalString('MISSING_OPT')).toBeUndefined();
+    });
+
+    it('returns undefined when env var is empty string', () => {
+        vi.stubEnv('TEST_OPT', '');
+        expect(envOptionalString('TEST_OPT')).toBeUndefined();
+        vi.unstubAllEnvs();
+    });
+
+    it('returns undefined when env var is whitespace-only', () => {
+        vi.stubEnv('TEST_OPT', '   ');
+        expect(envOptionalString('TEST_OPT')).toBeUndefined();
+        vi.unstubAllEnvs();
     });
 });

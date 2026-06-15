@@ -1,33 +1,34 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatRole, chatFromJSON, type ToolCall } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole, chatFromJSON, Prompt, type ToolCall } from '../../../src/index.js';
 import { Chat } from '../../../src/chats/chat.js';
 
 describe('Chat', async () => {
     describe('system message', async () => {
         it('exposes system message via systemMessage accessor', async () => {
             const chat = new Chat();
-            await chat.system('You are a helpful assistant.');
+            chat.system().add(new Prompt('Title', 'You are a helpful assistant.'));
             expect(chat.getSystem()).not.toBeNull();
             expect(chat.getSystem()!.role).toBe(ChatRole.System);
-            expect(chat.getSystem()!.content).toBe('You are a helpful assistant.');
+            expect(chat.getSystem()!.content).toContain('You are a helpful assistant.');
         });
 
-        it('updates existing system message content without duplication', async () => {
+        it('supports adding multiple components', async () => {
             const chat = new Chat();
-            await chat.system('Original system message.');
-            await chat.system('Updated system message.');
+            chat.system().add(new Prompt('First', 'Original content.'));
+            chat.system().add(new Prompt('Second', 'Additional content.'));
             expect(chat.getSystem()).not.toBeNull();
-            expect(chat.getSystem()!.content).toBe('Updated system message.');
+            expect(chat.getSystem()!.content).toContain('Original content.');
+            expect(chat.getSystem()!.content).toContain('Additional content.');
         });
 
         it('system message stays first after adding other messages', async () => {
             const chat = new Chat();
-            await chat.system('System prompt.');
+            chat.system().add(new Prompt('Title', 'System prompt.'));
             await chat.user('Hello');
             await chat.assistant('Hi there');
             const messages = chat.messages();
             expect(messages).toHaveLength(2);
-            expect(chat.getSystem()!.content).toBe('System prompt.');
+            expect(chat.getSystem()!.content).toContain('System prompt.');
             expect(messages[0]!.role).toBe(ChatRole.User);
             expect(messages[1]!.role).toBe(ChatRole.Assistant);
         });
@@ -89,7 +90,7 @@ describe('Chat', async () => {
             const chat = new Chat();
             await chat.user('Hello');
             const messages = chat.messages();
-            messages.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date() });
+            messages.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date(), origin: ChatMessageOrigin.User });
             expect(chat.messages()).toHaveLength(1);
         });
     });
@@ -97,7 +98,7 @@ describe('Chat', async () => {
     describe('messages()', async () => {
         it('returns messages via the public API method', async () => {
             const chat = new Chat();
-            await chat.system('System');
+            chat.system().add(new Prompt('Title', 'System'));
             await chat.user('Hello');
             await chat.assistant('World');
             const msgs = chat.messages();
@@ -110,7 +111,7 @@ describe('Chat', async () => {
             const chat = new Chat();
             await chat.user('Hello');
             const msgs = chat.messages();
-            msgs.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date() });
+            msgs.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date(), origin: ChatMessageOrigin.User });
             expect(chat.messages()).toHaveLength(1);
         });
 
@@ -123,11 +124,12 @@ describe('Chat', async () => {
     describe('clear', async () => {
         it('removes all messages including system', async () => {
             const chat = new Chat();
-            await chat.system('System');
+            chat.system().add(new Prompt('Title', 'System'));
             await chat.user('Hello');
             await chat.assistant('World');
             chat.clear();
             expect(chat.messages()).toHaveLength(0);
+            expect(chat.getSystem()).toBeNull();
         });
 
         it('works on empty chat', async () => {
@@ -135,35 +137,63 @@ describe('Chat', async () => {
             expect(() => chat.clear()).not.toThrow();
             expect(chat.messages()).toHaveLength(0);
         });
+
+        it('clears in-place (same container object after clear)', async () => {
+            const chat = new Chat();
+            const sys = chat.system();
+            sys.add(new Prompt('Title', 'content'));
+            chat.clear();
+            expect(chat.system()).toBe(sys);
+            expect(chat.system().hasContent()).toBe(false);
+        });
+
+        it('clears registered hooks so they no longer fire on new messages', async () => {
+            const chat = new Chat();
+            const handler = vi.fn();
+            chat.hook().message(ChatRole.User).do((msg) => handler(msg.content));
+
+            await chat.user('before');
+            expect(handler).toHaveBeenCalledTimes(1);
+
+            chat.clear();
+
+            await chat.user('after');
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('retainHooks keeps hooks active after clear', async () => {
+            const chat = new Chat();
+            const handler = vi.fn();
+            chat.hook().message(ChatRole.User).do((msg) => handler(msg.content));
+
+            await chat.user('before');
+            expect(handler).toHaveBeenCalledTimes(1);
+
+            chat.clear(true);
+
+            await chat.user('after');
+            expect(handler).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('addAll', async () => {
         it('adds non-system messages', async () => {
             const chat = new Chat();
             await chat.addAll([
-                { role: ChatRole.User, content: 'Hello', createdAt: new Date() },
-                { role: ChatRole.Assistant, content: 'Hi', createdAt: new Date() },
+                { role: ChatRole.User, content: 'Hello', createdAt: new Date(), origin: ChatMessageOrigin.User },
+                { role: ChatRole.Assistant, content: 'Hi', createdAt: new Date(), origin: ChatMessageOrigin.Model },
             ]);
             expect(chat.messages()).toHaveLength(2);
         });
 
-        it('adds system message when none exists', async () => {
+        it('rejects system messages via addAll', async () => {
             const chat = new Chat();
-            await chat.addAll([
-                { role: ChatRole.System, content: 'You are a bot.', createdAt: new Date() },
-                { role: ChatRole.User, content: 'Hello', createdAt: new Date() },
-            ]);
-            expect(chat.getSystem()!.content).toBe('You are a bot.');
-            expect(chat.messages()).toHaveLength(1);
-        });
-
-        it('updates existing system message', async () => {
-            const chat = new Chat();
-            await chat.system('Original system');
-            await chat.addAll([
-                { role: ChatRole.System, content: 'Updated system', createdAt: new Date() },
-            ]);
-            expect(chat.getSystem()!.content).toBe('Updated system');
+            await expect(
+                chat.addAll([
+                    { role: ChatRole.System, content: 'You are a bot.', createdAt: new Date(), origin: ChatMessageOrigin.System },
+                    { role: ChatRole.User, content: 'Hello', createdAt: new Date(), origin: ChatMessageOrigin.User },
+                ])
+            ).rejects.toThrow('Cannot add system messages via addAll');
             expect(chat.messages()).toHaveLength(0);
         });
     });
@@ -171,13 +201,13 @@ describe('Chat', async () => {
     describe('chatFromJSON', async () => {
         it('restores chat state from JSON via standalone function', async () => {
             const chat = new Chat();
-            await chat.system('System');
+            chat.system().add(new Prompt('System Prompt', 'System'));
             await chat.user('Hello');
             const json = chat.toJSON();
             const restored = chatFromJSON(json);
             expect(restored.messages()).toHaveLength(1);
             expect(restored.messages()[0]!.content).toBe('Hello');
-            expect(restored.getSystem()!.content).toBe('System');
+            expect(restored.getSystem()!.content).toContain('System');
         });
 
         it('chatFromJSON preserves sessionId', async () => {
@@ -189,12 +219,12 @@ describe('Chat', async () => {
         });
 
         it('handles empty messages', async () => {
-            const restored = chatFromJSON({ systemMessage: null, messages: [] });
+            const restored = chatFromJSON({ systemPrompt: null, messages: [] });
             expect(restored.messages()).toHaveLength(0);
         });
 
         it('returns a ChatInterface', async () => {
-            const restored = chatFromJSON({ systemMessage: null, messages: [] });
+            const restored = chatFromJSON({ systemPrompt: null, messages: [] });
             expect(typeof restored.messages).toBe('function');
             expect(typeof restored.toJSON).toBe('function');
             expect(typeof restored.hook).toBe('function');
@@ -210,54 +240,59 @@ describe('Chat', async () => {
             expect(chat1.sessionId).not.toBe(chat2.sessionId);
         });
 
-        it('toJSON returns systemMessage and messages', async () => {
+        it('toJSON returns systemPrompt and messages', async () => {
             const chat = new Chat();
-            await chat.system('System');
+            chat.system().add(new Prompt('System Prompt', 'System'));
             await chat.user('Hello');
             const json = chat.toJSON();
             expect(json.sessionId).toBe(chat.sessionId);
-            expect(json.systemMessage).toBeTruthy();
-            expect(json.systemMessage!.content).toBe('System');
+            expect(json.systemPrompt).toBeTruthy();
+            const prompt: any = json.systemPrompt;
+            expect(prompt.type).toBe('container');
+            expect(prompt.components).toHaveLength(1);
+            expect(prompt.components[0].type).toBe('prompt');
+            expect(prompt.components[0].content).toBe('System');
             expect(json.messages).toHaveLength(1);
             expect(json.messages[0]!.content).toBe('Hello');
         });
 
         it('fromJSON preserves sessionId', async () => {
             const original = new Chat();
-            await original.system('System');
+            original.system().add(new Prompt('System Prompt', 'System'));
             const json = original.toJSON();
             const restored = Chat.fromJSON(json);
             expect(restored.sessionId).toBe(original.sessionId);
         });
 
         it('fromJSON generates new sessionId when JSON has none', async () => {
-            const restored = Chat.fromJSON({ systemMessage: null, messages: [] });
+            const restored = Chat.fromJSON({ systemPrompt: null, messages: [] });
             expect(restored.sessionId).toBeTruthy();
         });
 
         it('fromJSON restores chat state correctly', async () => {
             const original = new Chat();
-            await original.system('System');
+            original.system().add(new Prompt('System Prompt', 'System'));
             await original.user('Hello');
             const json = original.toJSON();
             const restored = Chat.fromJSON(json);
             expect(restored.messages()).toHaveLength(1);
             expect(restored.messages()[0]!.content).toBe('Hello');
-            expect(restored.getSystem()!.content).toBe('System');
+            expect(restored.getSystem()!.content).toContain('System');
         });
 
         it('fromJSON handles empty messages', async () => {
-            const restored = Chat.fromJSON({ systemMessage: null, messages: [] });
+            const restored = Chat.fromJSON({ systemPrompt: null, messages: [] });
             expect(restored.messages()).toHaveLength(0);
         });
 
         it('fromJSON without system message works', async () => {
             const json = {
-                systemMessage: null,
-                messages: [{ role: ChatRole.User, content: 'Hello', createdAt: new Date().toISOString() }]
+                systemPrompt: null,
+                messages: [{ role: ChatRole.User, content: 'Hello', createdAt: new Date().toISOString(), origin: ChatMessageOrigin.User }]
             };
             const restored = Chat.fromJSON(json);
             expect(restored.messages()).toHaveLength(1);
+            expect(restored.messages()[0]!.origin).toBe(ChatMessageOrigin.User);
         });
 
         it('toJSON returns shallow copies of messages', async () => {
@@ -354,7 +389,7 @@ describe('Chat', async () => {
             const hook = chat.hook().message(ChatRole.User).regex(/hello/).do((message, matches) => onMatch(message, matches));
             const internalOnMessage = (hook as any)._onMessage;
             hook.dispose();
-            internalOnMessage({ role: ChatRole.User, content: 'hello', createdAt: new Date() });
+            internalOnMessage({ role: ChatRole.User, content: 'hello', createdAt: new Date(), origin: ChatMessageOrigin.User });
             expect(onMatch).not.toHaveBeenCalled();
         });
 

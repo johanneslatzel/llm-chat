@@ -1,4 +1,4 @@
-import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult, type ToolPackage } from '../../src/index.js';
+import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult, ToolPackage } from '../../src/index.js';
 
 export class AlphaTool extends Tool {
     constructor() {
@@ -57,20 +57,24 @@ export class ThrowsNonErrorTool extends Tool {
     }
 }
 
-export class AlphaBetaPackage implements ToolPackage {
-    tools(): Tool[] {
-        return [new AlphaTool(), new BetaTool()];
+export class AlphaBetaPackage extends ToolPackage {
+    constructor() {
+        super([new AlphaTool(), new BetaTool()]);
     }
 }
 
-export class DisposablePackage implements ToolPackage {
-    public disposed = false;
+export class DisposablePackage extends ToolPackage {
+    constructor() {
+        super([new AlphaTool()]);
+    }
+}
 
-    tools(): Tool[] {
-        return [new AlphaTool()];
+export class TutorialPackage extends ToolPackage {
+    constructor() {
+        super([new AlphaTool(), new BetaTool()]);
     }
 
-    dispose(): void {
-        this.disposed = true;
+    tutorial(): string | null {
+        return "Use alpha and beta together.";
     }
 }

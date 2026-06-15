@@ -41,6 +41,15 @@ export type FinishChunk = ChunkBase & {
 /** Union of all possible chunk types in a stream. */
 export type Chunk = ContentChunk | ReasoningChunk | ToolCallDeltaChunk | FinishChunk;
 
+/** Accumulated summary of a single LLM answer (one stream completion). */
+export type StreamSummary = {
+    content: string;
+    reasoning: string;
+    toolCallCount: number;
+    finishReason: FinishReason;
+    timestamp: Date;
+};
+
 /** Readable stream of chunks produced by a service call. Access the full list via {@link chunks}. */
 export interface ChunkStreamInterface extends HasHooks<StreamHookBuilder> {
     /** Snapshot of all chunks emitted so far (defensive copy). */
@@ -49,6 +58,13 @@ export interface ChunkStreamInterface extends HasHooks<StreamHookBuilder> {
     finishReason(): FinishReason | undefined;
     /** Access the hook builder for stream chunk events. */
     hook(): StreamHookBuilder;
+    /** Accumulated summaries of each completed stream, in order. */
+    summary(): readonly StreamSummary[];
+    /** Remove all chunks, reset the sequence, and clear chunk listeners
+     *  (unless `retainHooks` is `true`). */
+    clear(retainHooks?: boolean): void;
+    /** Remove all accumulated summaries. */
+    clearSummaries(): void;
 }
 
 /** Collects and exposes stream chunks. Notifies chunk listeners on each addition. */
@@ -58,6 +74,7 @@ export class ChunkStream implements ChunkStreamInterface {
     private _seq = 0;
     private _batch = 0;
     private _chunkListeners = new Set<(chunk: Chunk) => void>();
+    private _summaries: StreamSummary[] = [];
 
     /** Record a text content delta. */
     addContentChunk(text: string): void {
@@ -131,12 +148,14 @@ export class ChunkStream implements ChunkStreamInterface {
         return this._finishReason;
     }
 
-    /** Clear all chunks, reset the sequence, and increment the batch counter. */
-    clear(): void {
+    /** Clear all chunks, reset the sequence, and increment the batch counter.
+     *  When `retainHooks` is `true`, chunk listeners are preserved. */
+    clear(retainHooks?: boolean): void {
         this._chunks = [];
         this._finishReason = undefined;
         this._seq = 0;
         this._batch++;
+        if (!retainHooks) this._chunkListeners.clear();
     }
 
     /** @inheritDoc */
@@ -150,6 +169,21 @@ export class ChunkStream implements ChunkStreamInterface {
 
     offChunk(handler: (chunk: Chunk) => void): void {
         this._chunkListeners.delete(handler);
+    }
+
+    /** Record a stream summary for a completed answer. */
+    addSummary(summary: StreamSummary): void {
+        this._summaries.push(summary);
+    }
+
+    /** @inheritDoc */
+    summary(): readonly StreamSummary[] {
+        return [...this._summaries];
+    }
+
+    /** @inheritDoc */
+    clearSummaries(): void {
+        this._summaries = [];
     }
 
     private _notify(chunk: Chunk): void {

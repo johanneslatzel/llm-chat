@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { FinishReason, ChatService, ChatServiceConfiguration, Tool, ToolParameters, PartialToolResult, ResultStatus } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole, FinishReason, ChatService, ChatServiceConfiguration, Tool, ToolParameters, PartialToolResult, ResultStatus, ResultBuilder } from '../../../src/index.js';
+import { SystemPromptId } from '../../../src/chats/service.js';
 import { StreamEvent, StreamEventType } from '../../../src/chats/service.js';
 import { ChunkType } from '../../../src/chats/stream.js';
 import { createTempDir, removeTempDir, createTempFile } from '../../index.js';
+import { TutorialPackage } from '../../helper/tool-mocks.js';
 
 class TestChatService extends ChatService {
     private events: StreamEvent[];
@@ -13,6 +16,10 @@ class TestChatService extends ChatService {
         events: StreamEvent[],
         config?: ChatServiceConfiguration
     ) {
+        if (!config) {
+            config = new ChatServiceConfiguration();
+            config.systemPromptDir = '';
+        }
         super(config);
         this.events = events;
     }
@@ -62,6 +69,7 @@ describe('ChatService', () => {
 
     beforeEach(() => {
         config = new ChatServiceConfiguration();
+        config.systemPromptDir = '';
         config.userPromptPaths = [];
     });
 
@@ -71,7 +79,7 @@ describe('ChatService', () => {
             const chatInterface = service.chat();
             expect(chatInterface).toBeDefined();
             expect(typeof chatInterface.user).toBe('function');
-            expect(typeof chatInterface.system).toBe('function');
+            expect(chatInterface.system).toBeDefined();
             expect(typeof chatInterface.messages).toBe('function');
             expect(typeof chatInterface.toJSON).toBe('function');
             expect(typeof chatInterface.hook).toBe('function');
@@ -105,6 +113,30 @@ describe('ChatService', () => {
             vi.stubEnv('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 'not-a-number');
             const c = new ChatServiceConfiguration();
             expect(c.maxToolCallRounds).toBe(10);
+            vi.unstubAllEnvs();
+        });
+
+        it('falls back to ./prompts/ as systemPromptDir when neither env nor config is set', () => {
+            const c = new ChatServiceConfiguration();
+            expect(c.systemPromptDir).toBe('./prompts/');
+        });
+
+        it('hooksDir defaults to undefined', () => {
+            const c = new ChatServiceConfiguration();
+            expect(c.hooksDir).toBeUndefined();
+        });
+
+        it('hooksDir setter stores value', () => {
+            const c = new ChatServiceConfiguration();
+            c.hooksDir = './my-hooks';
+            expect(c.hooksDir).toBe('./my-hooks');
+        });
+
+        it('hooksDir reads from env var with priority over setter', () => {
+            vi.stubEnv('LLM_CHAT_HOOKS_DIR', '/env/hooks');
+            const c = new ChatServiceConfiguration();
+            c.hooksDir = './my-hooks';
+            expect(c.hooksDir).toBe('/env/hooks');
             vi.unstubAllEnvs();
         });
     });
@@ -306,10 +338,10 @@ describe('ChatService', () => {
             await service.chatImpl.user('Test');
 
             const suite = (service as any)._tools;
-            vi.spyOn(suite, 'executeTool').mockResolvedValue({
+            vi.spyOn(suite, 'executeTool').mockResolvedValue([{
                 result: 'Error: raw string error',
                 status: 'error'
-            });
+            }]);
 
             await service.send();
 
@@ -396,6 +428,51 @@ describe('ChatService', () => {
             expect(assistantMsg.tool_calls![0]!.id).toBe('call_abc');
             expect(assistantMsg.tool_calls![0]!.function.name).toBe('multi_chunk_tool');
             expect(assistantMsg.tool_calls![0]!.function.arguments).toBe('{"key": "value"}');
+        });
+
+        it('appends multiple tool messages from a chained result', async () => {
+            class ChainedTestTool extends Tool {
+                constructor() {
+                    super('chained_tool', 'Returns chained results', new ToolParameters({}));
+                }
+                protected async onExecute(_args: Record<string, unknown>): Promise<PartialToolResult> {
+                    const builder = new ResultBuilder();
+                    builder.add({ result: 'result-one', status: ResultStatus.Success });
+                    builder.add({ result: 'result-two', status: ResultStatus.Error });
+                    return builder.build();
+                }
+            }
+
+            const events: StreamEvent[] = [
+                {
+                    type: StreamEventType.ToolCallDelta,
+                    index: 0,
+                    id: 'call_chain',
+                    name: 'chained_tool',
+                    arguments: '{}',
+                },
+                { type: StreamEventType.Finish, reason: FinishReason.ToolCalls },
+                { type: StreamEventType.Content, text: 'Done with chain' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            service.tools().add(new ChainedTestTool());
+            await service.chatImpl.user('Chain test');
+            await service.send();
+
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(5);
+            expect(messages[1]!.role).toBe('assistant');
+            expect(messages[1]!.tool_calls).toHaveLength(1);
+            expect(messages[2]!.role).toBe('tool');
+            expect(messages[2]!.content).toBe('result-one');
+            expect(messages[3]!.role).toBe('tool');
+            expect(messages[3]!.content).toBe('result-two');
+            expect(messages[4]!.role).toBe('assistant');
+            expect(messages[4]!.content).toBe('Done with chain');
+            // Both tool results share the same tool_call_id
+            expect(messages[2]!.tool_call_id).toBe('call_chain');
+            expect(messages[3]!.tool_call_id).toBe('call_chain');
         });
     });
 
@@ -502,12 +579,11 @@ describe('ChatService', () => {
             }
         });
 
-        it('loads system prompt file path', async () => {
+        it('loads system prompt directory', async () => {
             const tmpDir = createTempDir();
             try {
-                const sysPath = path.join(tmpDir, 'sys.txt');
                 createTempFile(tmpDir, 'sys.txt', 'You are a helpful bot');
-                config.systemPromptPath = sysPath;
+                config.systemPromptDir = tmpDir;
 
                 const events: StreamEvent[] = [
                     { type: StreamEventType.Content, text: 'Answer' },
@@ -518,29 +594,34 @@ describe('ChatService', () => {
                 await service.send();
 
                 expect(service.chatImpl.getSystem()).not.toBeNull();
-                expect(service.chatImpl.getSystem()!.content).toBe('You are a helpful bot');
+                expect(service.chatImpl.getSystem()!.content).toContain('You are a helpful bot');
             } finally {
                 removeTempDir(tmpDir);
             }
         });
 
-        it('warns on missing system prompt file', async () => {
-            const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-            config.systemPromptPath = 'nonexistent.txt';
+        it('creates the directory and default prompt files when missing', async () => {
+            const tmpDir = createTempDir();
+            try {
+                config.systemPromptDir = tmpDir;
 
-            const events: StreamEvent[] = [
-                { type: StreamEventType.Content, text: 'Answer' },
-                { type: StreamEventType.Finish, reason: FinishReason.Stop },
-            ];
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Answer' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
 
-            const service = new TestChatService(events, config);
-            await service.send();
+                const service = new TestChatService(events, config);
+                await service.send();
 
-            const sysMessages = service.chatImpl.messages().filter((m) => m.role === 'system');
-            expect(sysMessages).toHaveLength(0);
-            expect(warnSpy).toHaveBeenCalledTimes(1);
-            expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load system prompt file'));
-            warnSpy.mockRestore();
+                const defaults = Object.values(SystemPromptId);
+                for (const id of defaults) {
+                    const filePath = path.join(tmpDir, `${id}.md`);
+                    expect(existsSync(filePath)).toBe(true);
+                    expect(readFileSync(filePath, 'utf-8')).toBe('');
+                }
+            } finally {
+                removeTempDir(tmpDir);
+            }
         });
     });
 
@@ -692,9 +773,6 @@ describe('ChatService', () => {
             const service = new TestChatService(events);
 
             await service.queue().user('Timer expired');
-            service.interrupt(true);
-            expect(service.needsResend()).toBe(true);
-
             await service.send();
 
             const messages = service.chatImpl.messages();
@@ -705,25 +783,19 @@ describe('ChatService', () => {
             expect(messages[1]!.content).toBe('Interrupt processed');
         });
 
-        it('interrupt without resend flag does not set needsResend', () => {
-            const service = new TestChatService([]);
-            service.interrupt();
-            expect(service.needsResend()).toBe(false);
-        });
-
-        it('needsResend is reset after send()', async () => {
-            const service = new TestChatService([]);
-            service.interrupt(true);
-            expect(service.needsResend()).toBe(true);
+        it('setNeedsResend followed by send sends the queued message', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'After resend' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.queue().user('Hello');
+            service.setNeedsResend();
             await service.send();
-            expect(service.needsResend()).toBe(false);
-        });
-
-        it('needsResend stays true until send() clears it', () => {
-            const service = new TestChatService([]);
-            service.interrupt(true);
-            expect(service.needsResend()).toBe(true);
-            expect(service.needsResend()).toBe(true);
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[0]!.content).toBe('Hello');
+            expect(messages[1]!.content).toBe('After resend');
         });
 
         it('interrupt without send flag does not drain the queue — subsequent send does', async () => {
@@ -751,7 +823,9 @@ describe('ChatService', () => {
         it('cancels an in-flight send', async () => {
             class HangingTestChatService extends ChatService {
                 constructor() {
-                    super();
+                    const cfg = new ChatServiceConfiguration();
+                    cfg.systemPromptDir = '';
+                    super(cfg);
                 }
 
                 protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
@@ -859,13 +933,14 @@ describe('ChatService', () => {
             tool.finish();
 
             await expect(sendPromise).resolves.toBeUndefined();
-            expect(service.needsResend()).toBe(true);
         });
 
         it('propagates non-AbortError from stream', async () => {
             class ThrowingTestChatService extends ChatService {
                 constructor() {
-                    super();
+                    const cfg = new ChatServiceConfiguration();
+                    cfg.systemPromptDir = '';
+                    super(cfg);
                 }
 
                 protected async *createStream(): AsyncIterable<StreamEvent> {
@@ -901,6 +976,411 @@ describe('ChatService', () => {
                 .map((m) => m.content)
                 .join('');
             expect(contentFromMessages).toBe('The answer is 42.');
+        });
+    });
+
+    describe('init', () => {
+        it('loads prompt files and marks context as loaded', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'sys.txt', 'You are a bot');
+                config.systemPromptDir = tmpDir;
+
+                const service = new TestChatService([], config);
+                await service.init();
+
+                expect(service.chatImpl.getSystem()).not.toBeNull();
+                expect(service.chatImpl.getSystem()!.content).toContain('You are a bot');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('is idempotent', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'first.txt', 'First');
+                config.systemPromptDir = tmpDir;
+
+                const service = new TestChatService([], config);
+                await service.init();
+                await service.init();
+
+                expect(service.chatImpl.getSystem()!.content).toContain('First');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('prevents loadPromptFiles from running again on first send', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'boot.txt', 'Boot prompt');
+                config.systemPromptDir = tmpDir;
+
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Answer' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+
+                const service = new TestChatService(events, config);
+                const spy = vi.spyOn(service, 'loadPromptFiles');
+                await service.init();
+                expect(spy).toHaveBeenCalledTimes(1);
+
+                await service.send();
+                expect(spy).toHaveBeenCalledTimes(1);
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+    });
+
+    describe('loadPromptFiles (public)', () => {
+        it('re-reads files from disk on each call', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'greeting.txt', 'Hello');
+                config.systemPromptDir = tmpDir;
+
+                const service = new TestChatService([], config);
+                await service.loadPromptFiles();
+                expect(service.chatImpl.getSystem()!.content).toContain('Hello');
+
+                createTempFile(tmpDir, 'greeting.txt', 'Updated');
+                await service.loadPromptFiles();
+                expect(service.chatImpl.getSystem()!.content).toContain('Updated');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+    });
+
+    describe('resetTutorials', () => {
+        it('re-wires tutorial container after chat.clear()', async () => {
+            const service = new TestChatService([]);
+            service.tools().add(new TutorialPackage());
+
+            service.chat().clear();
+            service.resetTutorials();
+
+            const systemContent = service.chatImpl.getSystem()?.content ?? '';
+            expect(systemContent).toContain('Tool Package TutorialPackage');
+            expect(systemContent).toContain('Use alpha and beta together.');
+        });
+
+        it('does not throw when no packages are registered', () => {
+            const service = new TestChatService([]);
+            service.chat().clear();
+            expect(() => service.resetTutorials()).not.toThrow();
+        });
+    });
+
+    describe('clear', () => {
+        it('exposes clear on stream interface', () => {
+            const service = new TestChatService([]);
+            expect(typeof service.stream().clear).toBe('function');
+        });
+
+        it('removes chat hooks registered through the service', async () => {
+            const service = new TestChatService([]);
+            const handler = vi.fn();
+            service.chat().hook().message(ChatRole.User).do((msg) => handler(msg.content));
+
+            await service.chatImpl.user('before');
+            expect(handler).toHaveBeenCalledWith('before');
+
+            service.clear();
+
+            await service.chatImpl.user('after');
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('allows fresh send after clear', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Hello' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            expect(service.chatImpl.messages()).toHaveLength(1);
+
+            service.clear();
+            expect(service.chatImpl.messages()).toHaveLength(0);
+
+            await expect(service.send()).resolves.toBeUndefined();
+        });
+    });
+
+    describe('json hook integration', () => {
+        let hooksDir: string;
+
+        beforeEach(() => {
+            hooksDir = createTempDir();
+        });
+
+        afterEach(() => {
+            removeTempDir(hooksDir);
+        });
+
+        it('loadJsonHooks loads hook files from hooksDir', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'test-hook.json'),
+                JSON.stringify({ target: 'chat' }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+
+            await service.loadJsonHooks();
+
+            expect((service as any)._jsonHookRegistry.size).toBe(1);
+        });
+
+        it('getJsonHooks returns label and target for each loaded hook', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'a.json'),
+                JSON.stringify({ label: 'hook-a', target: 'chat' }),
+                'utf-8'
+            );
+            writeFileSync(
+                path.join(hooksDir, 'b.json'),
+                JSON.stringify({ label: 'hook-b', target: 'stream' }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            const infos = service.getJsonHooks();
+            expect(infos).toHaveLength(2);
+            expect(infos[0]!.label).toBe('hook-a');
+            expect(infos[0]!.target).toBe('chat');
+            expect(infos[1]!.label).toBe('hook-b');
+            expect(infos[1]!.target).toBe('stream');
+        });
+
+        it('loadJsonHooks is a no-op when hooksDir is not set', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            const service = new TestChatService([], cfg);
+
+            await service.loadJsonHooks();
+
+            expect((service as any)._jsonHookRegistry.size).toBe(0);
+        });
+
+        it('auto-loads JSON hooks during init', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'test-hook.json'),
+                JSON.stringify({ target: 'chat' }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+
+            await service.init();
+
+            expect((service as any)._jsonHookRegistry.size).toBe(1);
+        });
+
+        it('interrupt action aborts the controller', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook.json'),
+                JSON.stringify({ target: 'chat', actions: [{ type: 'interrupt' }] }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            const abort = vi.fn();
+            (service as any)._abortController = { abort };
+            await service.loadJsonHooks();
+            await service.chatImpl.user('hello');
+            expect(abort).toHaveBeenCalledTimes(1);
+        });
+
+        it('interrupt-resend action sets needsResend', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook.json'),
+                JSON.stringify({ target: 'chat', actions: [{ type: 'interrupt', resend: true }] }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('hello');
+            expect((service as any)._needsResend).toBe(true);
+        });
+
+        it('queue-resend action sets needsResend without aborting', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook.json'),
+                JSON.stringify({ target: 'chat', actions: [{ type: 'queue-resend' }] }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            const abort = vi.fn();
+            (service as any)._abortController = { abort };
+            await service.loadJsonHooks();
+            await service.chatImpl.user('hello');
+            expect((service as any)._needsResend).toBe(true);
+            expect(abort).not.toHaveBeenCalled();
+        });
+
+        it('inject action queues a message (drained on send)', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', role: 'assistant', message: 'injected: {{content}}' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('trigger');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[0]!.role).toBe('user');
+            expect(messages[0]!.content).toBe('trigger');
+            expect(messages[1]!.role).toBe('assistant');
+            expect(messages[1]!.content).toBe('injected: trigger');
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+
+        it('inject action with user role queues a user message', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook-user.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', role: 'user', message: 'auto: {{content}}' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('trigger');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[0]!.role).toBe('user');
+            expect(messages[0]!.content).toBe('trigger');
+            expect(messages[1]!.role).toBe('user');
+            expect(messages[1]!.content).toBe('auto: trigger');
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+
+        it('inject action with reasoning role queues a reasoning message', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook-reasoning.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', role: 'reasoning', message: 'thinking: {{content}}' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('trigger');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[0]!.role).toBe('user');
+            expect(messages[1]!.role).toBe('reasoning');
+            expect(messages[1]!.content).toBe('thinking: trigger');
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+
+        it('inject action with tool role queues a tool message', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook-tool.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', role: 'tool', message: 'result: {{content}}' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('trigger');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[0]!.role).toBe('user');
+            expect(messages[1]!.role).toBe('tool');
+            expect(messages[1]!.content).toBe('result: trigger');
+            expect((messages[1] as any).tool_call_id).toMatch(/^inject-/);
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+
+        it('inject without message field uses defaultMessage', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook-no-msg.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', role: 'user' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('hello');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[1]!.content).toContain('[json-hook]');
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+
+        it('inject without explicit role defaults to assistant', async () => {
+            writeFileSync(
+                path.join(hooksDir, 'hook-no-role.json'),
+                JSON.stringify({
+                    target: 'chat',
+                    actions: [{ type: 'queue-message', message: 'default role: {{content}}' }],
+                }),
+                'utf-8'
+            );
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.hooksDir = hooksDir;
+            const service = new TestChatService([], cfg);
+            await service.loadJsonHooks();
+            await service.chatImpl.user('hello');
+            await service.send();
+            const messages = service.chatImpl.messages();
+            expect(messages).toHaveLength(2);
+            expect(messages[1]!.role).toBe('assistant');
+            expect(messages[1]!.content).toBe('default role: hello');
+            expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
         });
     });
 });

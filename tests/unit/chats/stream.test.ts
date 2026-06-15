@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChunkStream, ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, FinishChunk } from '../../../src/chats/stream.js';
+import { ChunkStream, ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, FinishChunk, type StreamSummary } from '../../../src/chats/stream.js';
 import { FinishReason } from '../../../src/chats/chat.js';
 
 describe('ChunkStream', () => {
@@ -131,6 +131,34 @@ describe('ChunkStream', () => {
             expect(stream.chunks()[0]!.seq).toBe(0);
             expect(stream.chunks()[0]!.batch).toBe(1);
         });
+
+        it('clears registered hooks so they no longer fire on new chunks', () => {
+            const stream = new ChunkStream();
+            const handler = vi.fn();
+            stream.hook().chunks().do(handler);
+
+            stream.addContentChunk('before');
+            expect(handler).toHaveBeenCalledTimes(1);
+
+            stream.clear();
+
+            stream.addContentChunk('after');
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('retainHooks keeps hooks active after clear', () => {
+            const stream = new ChunkStream();
+            const handler = vi.fn();
+            stream.hook().chunks().do(handler);
+
+            stream.addContentChunk('before');
+            expect(handler).toHaveBeenCalledTimes(1);
+
+            stream.clear(true);
+
+            stream.addContentChunk('after');
+            expect(handler).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('hook', () => {
@@ -248,6 +276,44 @@ describe('ChunkStream', () => {
             const view = stream.chunks();
             (view as any[]).push({} as any);
             expect(stream.chunks()).toHaveLength(1);
+        });
+    });
+
+    describe('summary', () => {
+        function makeSummary(): StreamSummary {
+            return {
+                content: 'hello',
+                reasoning: '',
+                toolCallCount: 0,
+                finishReason: FinishReason.Stop,
+                timestamp: new Date('2025-01-01')
+            };
+        }
+
+        it('returns added summaries', () => {
+            const stream = new ChunkStream();
+            stream.addSummary(makeSummary());
+            const s2 = makeSummary();
+            s2.content = 'world';
+            stream.addSummary(s2);
+            const summaries = stream.summary();
+            expect(summaries).toHaveLength(2);
+            expect(summaries[0]!.content).toBe('hello');
+            expect(summaries[1]!.content).toBe('world');
+        });
+
+        it('clears summaries', () => {
+            const stream = new ChunkStream();
+            stream.addSummary(makeSummary());
+            stream.clearSummaries();
+            expect(stream.summary()).toHaveLength(0);
+        });
+
+        it('returns a copy of the summaries array', () => {
+            const stream = new ChunkStream();
+            stream.addSummary(makeSummary());
+            const view = stream.summary();
+            expect(view).not.toBe(stream.summary());
         });
     });
 });

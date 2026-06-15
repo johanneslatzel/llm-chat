@@ -12,18 +12,14 @@ service.interrupt(true);
 
 ## Re-sending
 
-`interrupt(true)` sets a flag that can be checked with `needsResend()`. The caller is responsible for calling `send()` afterwards:
+`interrupt(true)` sets a flag that causes the next `send()` call to automatically retry the request. The flag is reset once `send()` runs.
 
 ```ts
 await service.queue().user('Timer "build" (30s) has expired.');
 service.interrupt(true);
 // later when ready:
-if (service.needsResend()) {
-    await service.send();
-}
+await service.send(); // retries automatically
 ```
-
-`needsResend()` returns `true` until `send()` is called, which resets the flag.
 
 ## How it works
 
@@ -39,15 +35,3 @@ service.stream().hook().chunks(ChunkType.Finish).do((chunk) => {
 });
 ```
 
-## Timer pattern
-
-```ts
-await service.queue().user('Timer "build" (30s) has expired.');
-service.interrupt(true);
-// 1. queues the message (queue mutex, fast)
-// 2. aborts in-flight request
-// 3. caller checks needsResend() and calls send()
-if (service.needsResend()) {
-    await service.send();
-}
-```

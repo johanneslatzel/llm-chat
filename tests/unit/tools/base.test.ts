@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PropertyType, ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult } from '../../../src/index.js';
+import { PropertyType, ResultStatus, Tool, ToolParameters, ToolParameterProperty, ResultBuilder, type PartialToolResult } from '../../../src/index.js';
 
 class ConcreteTool extends Tool {
     constructor() {
@@ -32,10 +32,11 @@ describe('Tool', () => {
 
     it('execute calls onExecute and wraps result with tool name', async () => {
         const tool = new ConcreteTool();
-        const result = await tool.execute({ input: 'hello' });
-        expect(result.tool).toBe('test_tool');
-        expect(result.result).toBe('Executed with: hello');
-        expect(result.status).toBe(ResultStatus.Success);
+        const results = await tool.execute({ input: 'hello' });
+        expect(results).toHaveLength(1);
+        expect(results[0]!.tool).toBe('test_tool');
+        expect(results[0]!.result).toBe('Executed with: hello');
+        expect(results[0]!.status).toBe(ResultStatus.Success);
     });
 
     it('execute returns error result when validateRequiredParams fails', async () => {
@@ -50,12 +51,14 @@ describe('Tool', () => {
         }
         const tool = new ValidatingTool();
         const success = await tool.execute({ x: 'hello' });
-        expect(success.status).toBe(ResultStatus.Success);
-        expect(success.result).toBe('x is hello');
+        expect(success).toHaveLength(1);
+        expect(success[0]!.status).toBe(ResultStatus.Success);
+        expect(success[0]!.result).toBe('x is hello');
 
         const failure = await tool.execute({});
-        expect(failure.status).toBe(ResultStatus.Error);
-        expect(failure.result).toBe("Error: Missing required parameter: 'x'");
+        expect(failure).toHaveLength(1);
+        expect(failure[0]!.status).toBe(ResultStatus.Error);
+        expect(failure[0]!.result).toBe("Error: Missing required parameter: 'x'");
     });
 
     it('toOpenAI returns a ChatCompletionTool structure', () => {
@@ -176,5 +179,126 @@ describe('ResultStatus', () => {
     it('has Success and Error values', () => {
         expect(ResultStatus.Success).toBe('success');
         expect(ResultStatus.Error).toBe('error');
+    });
+});
+
+describe('ResultBuilder', () => {
+    it('build() returns head of a single-result chain', () => {
+        const builder = new ResultBuilder();
+        builder.add({ result: 'one', status: ResultStatus.Success });
+        const head = builder.build();
+        expect(head.result).toBe('one');
+        expect(head.next).toBeUndefined();
+    });
+
+    it('chains multiple results via next', () => {
+        const builder = new ResultBuilder();
+        builder.add({ result: 'first', status: ResultStatus.Success });
+        builder.add({ result: 'second', status: ResultStatus.Error });
+        builder.add({ result: 'third', status: ResultStatus.Success });
+
+        const head = builder.build();
+        expect(head.result).toBe('first');
+        expect(head.next!.result).toBe('second');
+        expect(head.next!.status).toBe(ResultStatus.Error);
+        expect(head.next!.next!.result).toBe('third');
+        expect(head.next!.next!.next).toBeUndefined();
+    });
+
+    it('throws when build() is called with no results', () => {
+        const builder = new ResultBuilder();
+        expect(() => builder.build()).toThrow('ResultBuilder: no results added');
+    });
+
+    it('add() returns this for chaining', () => {
+        const builder = new ResultBuilder();
+        builder.add({ result: 'a', status: ResultStatus.Success })
+               .add({ result: 'b', status: ResultStatus.Success });
+        const head = builder.build();
+        expect(head.result).toBe('a');
+        expect(head.next!.result).toBe('b');
+    });
+
+    describe('from()', () => {
+        it('builds a chain from an array of results', () => {
+            const head = ResultBuilder.from([
+                { result: 'x', status: ResultStatus.Success },
+                { result: 'y', status: ResultStatus.Error }
+            ]).build();
+
+            expect(head.result).toBe('x');
+            expect(head.next!.result).toBe('y');
+            expect(head.next!.next).toBeUndefined();
+        });
+
+        it('throws when given an empty array', () => {
+            expect(() => ResultBuilder.from([]).build())
+                .toThrow('ResultBuilder: no results added');
+        });
+    });
+
+    describe('resolveAll()', () => {
+        it('awaits promises and builds the chain', async () => {
+            const head = await ResultBuilder.resolveAll([
+                Promise.resolve({ result: 'async-a', status: ResultStatus.Success }),
+                Promise.resolve({ result: 'async-b', status: ResultStatus.Error })
+            ]);
+
+            expect(head.result).toBe('async-a');
+            expect(head.next!.result).toBe('async-b');
+            expect(head.next!.next).toBeUndefined();
+        });
+
+        it('throws when given an empty array', async () => {
+            await expect(ResultBuilder.resolveAll([]))
+                .rejects.toThrow('ResultBuilder: no results added');
+        });
+
+        it('propagates rejection from a failed promise', async () => {
+            await expect(ResultBuilder.resolveAll([
+                Promise.resolve({ result: 'ok', status: ResultStatus.Success }),
+                Promise.reject(new Error('boom'))
+            ])).rejects.toThrow('boom');
+        });
+    });
+});
+
+describe('Tool multi-result', () => {
+    class MultiResultTool extends Tool {
+        constructor() {
+            super('multi', 'Returns multiple results', new ToolParameters({}));
+        }
+
+        protected async onExecute(_args: Record<string, unknown>): Promise<PartialToolResult> {
+            const builder = new ResultBuilder();
+            builder.add({ result: 'result-a', status: ResultStatus.Success });
+            builder.add({ result: 'result-b', status: ResultStatus.Error });
+            builder.add({ result: 'result-c', status: ResultStatus.Success });
+            return builder.build();
+        }
+    }
+
+    it('execute returns one ToolResult per chain node', async () => {
+        const tool = new MultiResultTool();
+        const results = await tool.execute({});
+        expect(results).toHaveLength(3);
+        expect(results[0]!.tool).toBe('multi');
+        expect(results[0]!.result).toBe('result-a');
+        expect(results[0]!.status).toBe(ResultStatus.Success);
+        expect(results[1]!.tool).toBe('multi');
+        expect(results[1]!.result).toBe('result-b');
+        expect(results[1]!.status).toBe(ResultStatus.Error);
+        expect(results[2]!.tool).toBe('multi');
+        expect(results[2]!.result).toBe('result-c');
+        expect(results[2]!.status).toBe(ResultStatus.Success);
+    });
+
+    it('execute does not mutate original PartialToolResult objects', async () => {
+        const tool = new MultiResultTool();
+        const results = await tool.execute({});
+        // Each ToolResult is a fresh object (spread), not the original
+        for (const r of results) {
+            expect(Object.keys(r)).toContain('tool');
+        }
     });
 });

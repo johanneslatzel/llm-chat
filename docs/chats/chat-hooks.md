@@ -7,6 +7,8 @@ All observation is done through hooks returned by `chat.hook()`.
 Subscribe to messages matching a role and/or regex:
 
 ```ts
+import { ChatRole } from "@johannes.latzel/llm-chat";
+
 chat.hook()
     .message(ChatRole.User)              // optional: filter by role(s)
     .regex(/hello/i)                     // optional: filter by regex
@@ -31,6 +33,17 @@ chat.hook()
 ```ts
 const hook = chat.hook().message(ChatRole.User).do(cb);
 hook.dispose();  // safe to call multiple times
+```
+
+## Clearing
+
+`chat.clear()` unregisters all message hooks. Hook objects that were returned
+by `.do()` become orphans — calling `.dispose()` on them after `clear()` is a
+harmless no-op. Pass `retainHooks: true` to preserve hooks across the reset:
+
+```ts
+chat.clear();        // hooks unregistered
+chat.clear(true);    // hooks preserved
 ```
 
 ## Notes

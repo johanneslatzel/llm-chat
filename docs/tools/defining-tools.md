@@ -15,7 +15,7 @@ class GreetTool extends Tool {
         );
     }
 
-        protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
+    protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
         const name = args.name;
         if (typeof name !== "string") {
             return { result: "name must be a string", status: ResultStatus.Error };
@@ -50,4 +50,46 @@ import { PropertyType } from "@johannes.latzel/llm-chat";
 new ToolParameterProperty("Item count", PropertyType.Integer)
 new ToolParameterProperty("Tags", PropertyType.Array)
 new ToolParameterProperty("Is enabled", PropertyType.Boolean)
+```
+
+### Multiple results
+
+A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult` — the return type stays `PartialToolResult` regardless of how many results the builder chains.
+
+```ts
+import { ResultBuilder } from "@johannes.latzel/llm-chat";
+
+protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
+    const builder = new ResultBuilder();
+    for (const path of args.paths as string[]) {
+        try {
+            const content = await readFile(path, "utf-8");
+            builder.add({ result: content, status: ResultStatus.Success });
+        } catch (err) {
+            builder.add({
+                result: `Error reading ${path}: ${(err as Error).message}`,
+                status: ResultStatus.Error
+            });
+        }
+    }
+    return builder.build();
+}
+```
+
+#### Convenience: `from()` and `resolveAll()`
+
+If you already have an array of results, use `ResultBuilder.from()`:
+
+```ts
+const results = await Promise.all(paths.map(p => readFile(p, "utf-8")));
+return ResultBuilder.from(results).build();
+```
+
+If you have an array of promises, `ResultBuilder.resolveAll()` combines `Promise.all` + `build()` in one step:
+
+```ts
+return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
+```
+
+The `onExecute` signature stays `Promise<PartialToolResult>` — only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
 ```

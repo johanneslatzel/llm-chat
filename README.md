@@ -6,14 +6,24 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/johanneslatzel/llm-chat/pulls)
 [![codecov](https://codecov.io/gh/johanneslatzel/llm-chat/graph/badge.svg)](https://codecov.io/gh/johanneslatzel/llm-chat)
-[![CI](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml)[![Socket Badge](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)
+[![CI](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml)
+[![Socket Badge](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)
+[![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green)](https://github.com/mefengl/made-by-ai)
 
-A typed TypeScript package for building LLM-powered chats with tool execution and hooks. Currently only OpenAI compatible agents are supported out of the box.
+Chat agents with typed tool calls, streaming, and hooks. Works with OpenAI-compatible APIs.
+
+## Features
+
+- chunk streaming, message queueing, serializable chat history
+- automatic tool-call loop, typed tools parameter validation
+- hook into the stream, chat history, and tool calls
+- composed system prompts
+- configurable via config objects and env vars
 
 ## Prerequisites
 
 - Node.js >= 18
-- An OpenAI-compatible API endpoint (e.g. [LM Studio](https://lmstudio.ai/))
+- An OpenAI-compatible API endpoint
 
 ## Installation
 

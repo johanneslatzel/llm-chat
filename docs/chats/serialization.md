@@ -18,6 +18,11 @@ The system prompt (when present) also carries a `createdAt`.
 
 ## Clearing
 
-`chat.clear()` resets both the message list **and** the system prompt. After calling it, the chat is empty — `systemMessage` is `null` and `messages` is `[]`.
+`chat.clear()` removes all conversation messages, clears the system prompt
+tree, and unregisters message hook listeners. After calling it, `getSystem()`
+returns `null` and `messages()` is empty. The system prompt container is
+cleared in-place (children removed, title reset). Pass `retainHooks: true`
+to preserve hooks. If tool tutorials were registered, call
+`service.resetTutorials()` afterwards to re-populate them.
 
 Hooks are not serialized — re-register after `chatFromJSON()`.

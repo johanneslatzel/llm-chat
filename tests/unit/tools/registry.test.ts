@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { ToolSuite } from '../../../src/tools/suite.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ToolSuite, ToolEvent } from '../../../src/tools/suite.js';
 import { AlphaTool, BetaTool } from '../../helper/tool-mocks.js';
+import { ResultStatus } from '../../../src/index.js';
 
 describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
     let registry: ToolSuite;
@@ -35,13 +36,26 @@ describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
 
     it('executeTool parses JSON args and calls the tool', async () => {
         registry.add(new AlphaTool());
-        const result = await registry.executeTool('alpha', '{"x": "hello"}');
-        expect(result.result).toBe('Alpha: hello');
-        expect(result.status).toBe('success');
+        const results = await registry.executeTool('alpha', '{"x": "hello"}');
+        expect(results[0]!.result).toBe('Alpha: hello');
+        expect(results[0]!.status).toBe('success');
     });
 
-    it('executeTool throws for unknown tool name', async () => {
-        await expect(registry.executeTool('unknown', '{}')).rejects.toThrow(
+    it('executeTool returns error for unknown tool name', async () => {
+        const results = await registry.executeTool('unknown', '{}');
+        expect(results[0]!).toEqual({
+            result: "Error: No tool registered with name 'unknown'",
+            status: ResultStatus.Error
+        });
+    });
+
+    it('executeTool emits Error event for unknown tool name', async () => {
+        const handler = vi.fn();
+        registry.on(ToolEvent.Error, handler);
+        await registry.executeTool('unknown', '{}');
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler).toHaveBeenCalledWith('unknown', expect.any(Error));
+        expect(handler.mock.calls[0]![1].message).toBe(
             "No tool registered with name 'unknown'"
         );
     });

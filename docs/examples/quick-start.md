@@ -9,7 +9,7 @@ const service = new OpenAIChatService();
 const chat = service.chat();
 
 // build the message history
-chat.system("You are a helpful assistant.");
+chat.system().child('general').prompt('persona').setContent("You are a helpful assistant.");
 chat.user("What is the weather in Berlin?");
 
 // send to the model and stream the response
@@ -45,6 +45,9 @@ class GreetTool extends Tool {
 const service = new OpenAIChatService();
 service.tools().add(new GreetTool());
 const chat = service.chat();
+
+chat.system().child('general').prompt('persona').setContent("You are a helpful assistant.");
+chat.user("What is the weather in Berlin?");
 
 service.stream().hook().chunks(ChunkType.Content).do((chunk) => process.stdout.write(chunk.text));
 service.stream().hook().chunks(ChunkType.Reasoning).do((chunk) => process.stdout.write(chunk.text));

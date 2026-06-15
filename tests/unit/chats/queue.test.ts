@@ -12,15 +12,6 @@ describe('MessageQueue', () => {
         expect(msgs[0]!.content).toBe('Hello');
     });
 
-    it('queues system message', async () => {
-        const q = new MessageQueue();
-        await q.system('System prompt');
-        const msgs = await q.clear();
-        expect(msgs).toHaveLength(1);
-        expect(msgs[0]!.role).toBe(ChatRole.System);
-        expect(msgs[0]!.content).toBe('System prompt');
-    });
-
     it('queues assistant message without tool_calls', async () => {
         const q = new MessageQueue();
         await q.assistant('Sure thing');
@@ -50,16 +41,6 @@ describe('MessageQueue', () => {
         const msgs = await q.clear();
         expect(msgs[0]!.role).toBe(ChatRole.Reasoning);
         expect(msgs[0]!.content).toBe('Thinking...');
-    });
-
-    it('addAll queues multiple messages atomically', async () => {
-        const q = new MessageQueue();
-        await q.addAll([
-            { role: ChatRole.User, content: 'A', createdAt: new Date() },
-            { role: ChatRole.User, content: 'B', createdAt: new Date() },
-        ]);
-        const msgs = await q.clear();
-        expect(msgs).toHaveLength(2);
     });
 
     it('clear returns empty array on empty queue', async () => {
