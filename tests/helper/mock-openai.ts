@@ -5,6 +5,8 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 export interface MockChunk {
     content?: string;
     reasoning_content?: string;
+    reasoning?: string;
+    reasoning_details?: Array<Record<string, unknown>>;
     tool_calls?: Array<{
         index: number;
         id?: string;
@@ -19,6 +21,8 @@ export function createChunk(delta: MockChunk): ChatCompletionChunk {
         delta: {
             content: delta.content ?? null,
             ...(delta.reasoning_content ? { reasoning_content: delta.reasoning_content } : {}),
+            ...(delta.reasoning ? { reasoning: delta.reasoning } : {}),
+            ...(delta.reasoning_details ? { reasoning_details: delta.reasoning_details } : {}),
             tool_calls: delta.tool_calls
                 ? delta.tool_calls.map((tc) => ({
                       index: tc.index,

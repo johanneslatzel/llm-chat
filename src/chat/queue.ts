@@ -6,7 +6,7 @@ import {
     HookMessageWriter,
     MessageWriter,
     ToolCall
-} from './chat.js';
+} from './types.js';
 
 /** Thread-safe message queue backed by its own mutex. Implements both {@link MessageWriter} and {@link HookMessageWriter}. */
 export class MessageQueue implements MessageWriter, HookMessageWriter {

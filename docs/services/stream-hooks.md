@@ -33,6 +33,8 @@ service.stream().hook().chunks().do((chunk) => {
 
 Each returns a `Hook` — call `.dispose()` to unsubscribe.
 
+Stream hooks are **fire-and-forget** — async callbacks passed to `do()` are not awaited. Use them for observation and side effects (logging, display) that should not block the stream pipeline.
+
 ## Chunk identity
 
 Every chunk has two numeric fields:
@@ -57,6 +59,22 @@ of each `send()` call. Chunk listeners are preserved across sends — hooks
 registered on the stream survive multiple `send()` rounds within the same
 conversation. To fully remove stream hooks, call `service.stream().clear()` or
 `service.clear()`.
+
+## Summaries
+
+After each `send()` call, the stream records a `StreamSummary` containing the aggregated output:
+
+```ts
+await service.send();
+const summaries = service.stream().summary();
+// summaries[0].content      — all content text from this send
+// summaries[0].reasoning    — all reasoning text from this send
+// summaries[0].toolCallCount — number of tool calls invoked
+// summaries[0].finishReason  — why the stream finished
+// summaries[0].timestamp    — when the summary was created
+```
+
+Summaries accumulate across multiple `send()` calls. Call `service.stream().clearSummaries()` to reset them without affecting chunks or hooks.
 
 ## Ordering guarantee
 

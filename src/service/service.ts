@@ -2,11 +2,14 @@ import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
 import { envInt, envOptionalString, envString } from '../env.js';
-import { Chat, ChatInterface, FinishReason, MessageWriter, ToolCall } from './chat.js';
-import { MessageQueue } from './queue.js';
-import { ChunkStream, ChunkStreamInterface } from './stream.js';
+import { Chat } from '../chat/chat.js';
+import { ChatInterface, FinishReason, MessageWriter, ToolCall } from '../chat/types.js';
+import { MessageQueue } from '../chat/queue.js';
+import { ChunkStream } from './stream.js';
+import type { ChunkStreamInterface } from './stream-types.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 import { JsonHookRegistry, type JsonHookInfo, type JsonHookControls } from '../hooks/json-hooks.js';
+import { ServiceEvent, ServiceHookBuilder } from './service-hooks.js';
 
 /** Discriminant for stream event types yielded by a {@link ChatService}. */
 export enum StreamEventType {
@@ -84,6 +87,10 @@ export class ChatServiceConfiguration {
     set hooksDir(value: string | undefined) {
         this._hooksDir = value;
     }
+    /** When set, this flat string overrides the system prompt tree. The tree is bypassed entirely — `chat.getSystem()` returns `null`, and this string is sent directly as the system (or developer) message. */
+    systemPrompt?: string;
+    /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
+    trimMessages?: boolean = false;
 }
 
 /** Base class for LLM service providers. Handles the tool-call loop, prompt file loading, and concurrency. */
@@ -99,9 +106,12 @@ export abstract class ChatService implements JsonHookControls {
     /** Internal tool registry. */
     protected _tools = new ToolSuite();
     private _jsonHookRegistry = new JsonHookRegistry(this._messageQueue, this);
+    private _serviceListeners = new Map<string, Set<Function>>();
+    private _sendReentrant = false;
+    private _pendingReentrant = false;
 
     protected constructor(
-        private config: ChatServiceConfiguration = new ChatServiceConfiguration()
+        protected config: ChatServiceConfiguration = new ChatServiceConfiguration()
     ) {
         this._tools.setTutorialContainer(this.chatImpl.system().child('tutorials'));
     }
@@ -109,6 +119,31 @@ export abstract class ChatService implements JsonHookControls {
     /** Access the tool registry to register tools before calling {@link send}. */
     tools(): ToolSuiteInterface {
         return this._tools;
+    }
+
+    /** Subscribe to a service event. Internal — use {@link hook} instead. */
+    on(event: string, handler: Function): void {
+        if (!this._serviceListeners.has(event)) {
+            this._serviceListeners.set(event, new Set());
+        }
+        this._serviceListeners.get(event)!.add(handler);
+    }
+
+    /** Unsubscribe a service event handler. */
+    off(event: string, handler: Function): void {
+        this._serviceListeners.get(event)?.delete(handler);
+    }
+
+    private async _emit(event: string, ...args: any[]): Promise<void> {
+        const listeners = this._serviceListeners.get(event);
+        if (listeners) {
+            for (const fn of listeners) await fn(...args);
+        }
+    }
+
+    /** Build service lifecycle hooks. */
+    hook(): ServiceHookBuilder {
+        return new ServiceHookBuilder(this);
     }
 
     /** Access the chat interface to build message history. */
@@ -126,6 +161,35 @@ export abstract class ChatService implements JsonHookControls {
      *  modifying the chat or queue, without aborting the current stream. */
     setNeedsResend(): void {
         this._needsResend = true;
+    }
+
+    /**
+     * Executes a registered tool and queues its result as assistant+tool
+     * messages without firing tool hooks. Does **not** call {@link interrupt}
+     * or {@link send} — the caller is responsible for flushing (e.g. via
+     * {@link setNeedsResend} in a hook, or by calling {@link send} directly).
+     *
+     * @param toolName  Name of the registered tool.
+     * @param args      Arguments to pass to the tool.
+     * @throws          If no tool is registered with `toolName`.
+     */
+    public async injectToolCall(toolName: string, args: Record<string, unknown>): Promise<void> {
+        const tool = this._tools.get(toolName);
+        if (!tool) throw new Error(`No tool registered with name '${toolName}'`);
+
+        const id = `${toolName}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+        const toolCall: ToolCall = {
+            id,
+            type: 'function',
+            function: { name: toolName, arguments: JSON.stringify(args) }
+        };
+
+        const results = await this._tools.executeTool(toolName, JSON.stringify(args), true);
+
+        await this._messageQueue.assistant('', [toolCall]);
+        for (const r of results) {
+            await this._messageQueue.tool(r.result, id);
+        }
     }
 
     /** Access the chunk stream produced by the last {@link send} call. */
@@ -176,18 +240,54 @@ export abstract class ChatService implements JsonHookControls {
     /** Send the current chat to the provider and process the response (mutex-guarded).
      *  Drains the message queue first. If a hook calls {@link interrupt} with
      *  `resend: true` (or {@link setNeedsResend} is called) during the send,
-     *  the request is automatically retried. */
+     *  the request is automatically retried.
+     *
+     *  Hook callbacks may safely call `send()` reentrantly — the call is
+     *  deferred and runs as an additional loop iteration. */
     async send(): Promise<void> {
+        if (this._sendReentrant) {
+            this._pendingReentrant = true;
+            return;
+        }
+
         await this._sendMutex.runExclusive(async () => {
-            do {
-                this._needsResend = false;
-                const queued = await this._messageQueue.clear();
-                if (queued.length > 0) {
-                    await this.chatImpl.addAll(queued);
-                }
-                await this._send();
-            } while (this._needsResend);
+            this._sendReentrant = true;
+            this._pendingReentrant = false;
+            try {
+                await this._drainQueue();
+
+                await this._emit(ServiceEvent.BeforeSendLoop);
+
+                do {
+                    this._needsResend = false;
+                    this._pendingReentrant = false;
+
+                    await this._drainQueue();
+
+                    await this._emit(ServiceEvent.BeforeSend);
+
+                    await this._drainQueue();
+
+                    await this._send();
+
+                    await this._emit(ServiceEvent.AfterSend);
+                } while (this._needsResend || this._pendingReentrant);
+
+                this._pendingReentrant = false;
+
+                await this._emit(ServiceEvent.AfterSendLoop);
+
+                await this._drainQueue();
+            } finally {
+                this._sendReentrant = false;
+            }
         });
+    }
+
+    /** Drain the message queue into chat history. */
+    private async _drainQueue(): Promise<void> {
+        const queued = await this._messageQueue.clear();
+        await this.chatImpl.addAll(queued);
     }
 
     /**
@@ -380,20 +480,22 @@ export abstract class ChatService implements JsonHookControls {
             timestamp: new Date()
         });
 
+        const trimmed = (s: string) => (this.config.trimMessages ? s.trim() : s);
+
         if (reasoningContent) {
-            await this.chatImpl.reasoning(reasoningContent);
+            await this.chatImpl.reasoning(trimmed(reasoningContent));
         }
 
         if (reason === FinishReason.Stop || reason === FinishReason.Length) {
             if (content) {
-                await this.chatImpl.assistant(content);
+                await this.chatImpl.assistant(trimmed(content));
             }
             return;
         }
 
         if (reason === FinishReason.ToolCalls) {
             if (iteration >= this.config.maxToolCallRounds) {
-                await this.chatImpl.assistant(content);
+                await this.chatImpl.assistant(trimmed(content));
                 await this.chatImpl.user(
                     'Your tool call loop was interrupted after reaching the maximum number of rounds. Please summarize your progress so far and continue without further tool calls.'
                 );
@@ -410,7 +512,7 @@ export abstract class ChatService implements JsonHookControls {
                 });
             }
 
-            await this.chatImpl.assistant(content, toolCalls);
+            await this.chatImpl.assistant(trimmed(content), toolCalls);
 
             for (const tc of toolCalls) {
                 const results = await this._tools.executeTool(

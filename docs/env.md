@@ -20,6 +20,9 @@ Read at `OpenAIChatService` construction:
 | `LLM_CHAT_OPENAI_MAX_TOKENS` | `max_tokens` |
 | `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS` | `max_completion_tokens` (o1/o3, takes precedence) |
 | `LLM_CHAT_OPENAI_TOP_P` | Nucleus sampling |
+| `LLM_CHAT_OPENAI_REASONING_EFFORT` | `reasoning_effort` for o-series models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `LLM_CHAT_OPENAI_TOOL_CHOICE` | `tool_choice` (`none`, `auto`, `required`) |
+| `LLM_CHAT_OPENAI_VERBOSITY` | `verbosity` (`low`, `medium`, `high`) |
 
 ## Chat Service
 

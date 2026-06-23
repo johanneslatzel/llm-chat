@@ -25,3 +25,14 @@ service.tools().add(new GreetTool());
 ```
 
 Duplicates throw: `"A tool with the name 'greet' is already registered."`
+
+Look up a registered tool by name with `service.tools().get(name)`:
+
+```ts
+const tool = service.tools().get("greet");
+if (tool) {
+    // tool is the Tool instance
+}
+```
+
+Returns `undefined` if no tool with that name is registered.

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChunkStream, ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, FinishChunk, type StreamSummary } from '../../../src/chats/stream.js';
-import { FinishReason } from '../../../src/chats/chat.js';
+import { ChunkStream } from '../../../src/service/stream.js';
+import { ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, FinishChunk, type StreamSummary } from '../../../src/service/stream-types.js';
+import { FinishReason } from '../../../src/chat/types.js';
 
 describe('ChunkStream', () => {
     describe('chunk creation', () => {

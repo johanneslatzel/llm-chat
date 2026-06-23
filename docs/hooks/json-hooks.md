@@ -56,7 +56,8 @@ Every content chunk the LLM streams out is now logged to the console:
 ### `chat` — react to messages
 
 Fires when a message is added to the chat history. This includes user messages,
-assistant responses, tool results — any message.
+assistant responses, tool results — any message **except** those with
+`origin: Hook` (see `queue-message` below).
 
 | Filter | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -219,7 +220,12 @@ also triggers the hook, it retries again — `maxTriggers` can cap this.
 ### `queue-message`
 
 Queue a synthetic message that is sent on the next LLM request. The message sits
-in a queue and is drained when `send()` runs.
+in a queue and is drained when `send()` runs. Messages queued this way are
+tagged with `origin: Hook`.
+
+Chat hooks with `target: "chat"` silently skip Hook-origin messages to prevent
+infinite loops — a hook that queues a message won't re-trigger itself when that
+message is drained into chat history.
 
 ```json
 { "type": "queue-message", "role": "user", "message": "Please clarify." }

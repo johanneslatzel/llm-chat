@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
-import { ChatMessageOrigin, FinishReason, OpenAIChatService, OpenAIChatServiceConfiguration, ChatServiceConfiguration, Prompt, Tool, ToolParameters, ResultStatus, type PartialToolResult } from '../../../src/index.js';
+import { ChatRole, ChatMessageOrigin, FinishReason, OpenAIChatService, OpenAIChatServiceConfiguration, ChatServiceConfiguration, ReasoningEffort, ToolChoice, Verbosity, Prompt, Tool, ToolParameters, ResultStatus, type PartialToolResult } from '../../../src/index.js';
 import { createMockOpenAI, createMockOpenAIWithError, MockChunk, createChunk } from '../../index.js';
 
 class TestOpenAITool extends Tool {
@@ -65,6 +65,128 @@ describe('OpenAIChatService', () => {
             const reasoningEvents = events.filter((e) => e.type === 'reasoning');
             expect(reasoningEvents).toHaveLength(1);
             expect(reasoningEvents[0]!.text).toBe('Let me think...');
+        });
+
+        it('yields reasoning events from reasoning string field', async () => {
+            const mockChunks = makeChunks([
+                { reasoning: 'Thinking step by step...' },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(1);
+            expect(reasoningEvents[0]!.text).toBe('Thinking step by step...');
+        });
+
+        it('yields reasoning events from reasoning_details array', async () => {
+            const mockChunks = makeChunks([
+                { reasoning_details: [{ type: 'reasoning.text', text: 'Let me analyze...' }] },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(1);
+            expect(reasoningEvents[0]!.text).toBe('Let me analyze...');
+        });
+
+        it('yields reasoning events from reasoning_details summary type', async () => {
+            const mockChunks = makeChunks([
+                { reasoning_details: [{ type: 'reasoning.summary', summary: 'Summarized reasoning' }] },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(1);
+            expect(reasoningEvents[0]!.text).toBe('Summarized reasoning');
+        });
+
+        it('prioritizes reasoning_details over reasoning when both present', async () => {
+            const mockChunks = makeChunks([
+                {
+                    reasoning: 'This should be ignored',
+                    reasoning_details: [{ type: 'reasoning.text', text: 'This should be used' }],
+                },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(1);
+            expect(reasoningEvents[0]!.text).toBe('This should be used');
+        });
+
+        it('skips reasoning_details encrypted type', async () => {
+            const mockChunks = makeChunks([
+                { reasoning_details: [{ type: 'reasoning.encrypted', data: 'opaque-blob' }] },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(0);
+        });
+
+        it('emits multiple reasoning_details items in one chunk', async () => {
+            const mockChunks = makeChunks([
+                {
+                    reasoning_details: [
+                        { type: 'reasoning.text', text: 'First thought' },
+                        { type: 'reasoning.text', text: 'Second thought' },
+                    ],
+                },
+                { content: 'Answer' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            const events: any[] = [];
+            for await (const event of (service as any).createStream()) {
+                events.push(event);
+            }
+
+            const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+            expect(reasoningEvents).toHaveLength(2);
+            expect(reasoningEvents[0]!.text).toBe('First thought');
+            expect(reasoningEvents[1]!.text).toBe('Second thought');
         });
 
         it('yields tool call delta events', async () => {
@@ -408,6 +530,99 @@ describe('OpenAIChatService', () => {
             const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
             expect(callArgs.top_p).toBe(0.9);
         });
+
+        it('passes reasoningEffort to API call', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const openAIConfig = new OpenAIChatServiceConfiguration();
+            openAIConfig.model = 'test-model';
+            openAIConfig.reasoningEffort = ReasoningEffort.High;
+            const service = new OpenAIChatService(mock, openAIConfig, config);
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.reasoning_effort).toBe('high');
+        });
+
+        it('passes toolChoice to API call', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const openAIConfig = new OpenAIChatServiceConfiguration();
+            openAIConfig.model = 'test-model';
+            openAIConfig.toolChoice = ToolChoice.Required;
+            const service = new OpenAIChatService(mock, openAIConfig, config);
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.tool_choice).toBe('required');
+        });
+
+        it('passes verbosity to API call', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const openAIConfig = new OpenAIChatServiceConfiguration();
+            openAIConfig.model = 'test-model';
+            openAIConfig.verbosity = Verbosity.High;
+            const service = new OpenAIChatService(mock, openAIConfig, config);
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.verbosity).toBe('high');
+        });
+
+        it('reads reasoningEffort from env', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_REASONING_EFFORT', 'high');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.reasoningEffort).toBe(ReasoningEffort.High);
+            vi.unstubAllEnvs();
+        });
+
+        it('reads toolChoice from env', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_TOOL_CHOICE', 'required');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.toolChoice).toBe(ToolChoice.Required);
+            vi.unstubAllEnvs();
+        });
+
+        it('reads verbosity from env', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_VERBOSITY', 'medium');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.verbosity).toBe(Verbosity.Medium);
+            vi.unstubAllEnvs();
+        });
+
+        it('returns undefined for invalid reasoningEffort env value', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_REASONING_EFFORT', 'invalid');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.reasoningEffort).toBeUndefined();
+            vi.unstubAllEnvs();
+        });
+
+        it('returns undefined for invalid toolChoice env value', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_TOOL_CHOICE', 'invalid');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.toolChoice).toBeUndefined();
+            vi.unstubAllEnvs();
+        });
+
+        it('returns undefined for invalid verbosity env value', () => {
+            vi.stubEnv('LLM_CHAT_OPENAI_VERBOSITY', 'invalid');
+            const cfg = new OpenAIChatServiceConfiguration();
+            expect(cfg.verbosity).toBeUndefined();
+            vi.unstubAllEnvs();
+        });
     });
 
     describe('toLocalISOString negative offset', () => {
@@ -484,6 +699,68 @@ describe('OpenAIChatService', () => {
             expect(callArgs.messages[1].role).toBe('user');
         });
 
+        it('maps system role to developer when useDeveloperRole is true', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(
+                mock,
+                { model: 'test-model', useDeveloperRole: true },
+                config
+            );
+            service.chatImpl.system().add(new Prompt('Title', 'You are a bot'));
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.messages[0].role).toBe('developer');
+            expect(callArgs.messages[0].content).toContain('You are a bot');
+        });
+
+        it('uses flat systemPrompt when set, overriding the prompt tree', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.userPromptPaths = [];
+            cfg.systemPrompt = 'You are a flat prompt bot.';
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, cfg);
+            service.chatImpl.system().add(new Prompt('Title', 'You should not see this.'));
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.messages[0].role).toBe('system');
+            expect(callArgs.messages[0].content).toBe('You are a flat prompt bot.');
+            expect(callArgs.messages[0].content).not.toContain('should not see this');
+        });
+
+        it('maps flat systemPrompt to developer role when useDeveloperRole is true', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.userPromptPaths = [];
+            cfg.systemPrompt = 'You are a flat prompt bot.';
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(
+                mock,
+                { model: 'test-model', useDeveloperRole: true },
+                cfg
+            );
+
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.messages[0].role).toBe('developer');
+            expect(callArgs.messages[0].content).toBe('You are a flat prompt bot.');
+        });
+
         it('filters out reasoning messages by default', async () => {
             const mockChunks = makeChunks([
                 { content: 'Hi' },
@@ -533,6 +810,24 @@ describe('OpenAIChatService', () => {
             ]);
 
             await expect((service as any).createStream().next()).rejects.toThrow('Unexpected role: bogus_role');
+        });
+
+        it('maps ChatRole.Developer to developer role', async () => {
+            const mockChunks = makeChunks([
+                { content: 'Hi' },
+                { finish_reason: 'stop' },
+            ]);
+            const mock = createMockOpenAI(mockChunks);
+            const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
+
+            vi.spyOn(service.chatImpl, 'messages').mockReturnValue([
+                { role: ChatRole.Developer, content: 'be concise', createdAt: new Date(), origin: ChatMessageOrigin.System }
+            ]);
+            await (service as any).createStream().next();
+
+            const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+            expect(callArgs.messages[0].role).toBe('developer');
+            expect(callArgs.messages[0].content).toBe('be concise');
         });
     });
 

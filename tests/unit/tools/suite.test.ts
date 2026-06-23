@@ -43,9 +43,10 @@ describe('ToolSuite', () => {
 
     it('executeTool returns error for unknown tool name', async () => {
         const results = await suite.executeTool('unknown', '{}');
-        expect(results[0]!).toEqual({
+        expect(results[0]!).toMatchObject({
             result: "Error: No tool registered with name 'unknown'",
-            status: ResultStatus.Error
+            status: ResultStatus.Error,
+            tool: 'unknown'
         });
     });
 
@@ -67,6 +68,22 @@ describe('ToolSuite', () => {
 
     it('getTools returns empty array when no tools registered', () => {
         expect(suite.getTools()).toEqual([]);
+    });
+
+    it('get returns a registered tool by name', () => {
+        suite.add(new AlphaTool());
+        const tool = suite.get('alpha');
+        expect(tool).toBeDefined();
+        expect(tool!.name).toBe('alpha');
+    });
+
+    it('get returns undefined for unknown name', () => {
+        suite.add(new AlphaTool());
+        expect(suite.get('nonexistent')).toBeUndefined();
+    });
+
+    it('get returns undefined when no tools registered', () => {
+        expect(suite.get('anything')).toBeUndefined();
     });
 
     describe('ToolPackage', () => {
@@ -272,7 +289,7 @@ describe('ToolSuite', () => {
             const handler = vi.fn();
             suite.hook().error().do(handler);
             const [result] = await suite.executeTool('failing', '{}');
-            expect(result).toEqual({ result: 'Error: Intentional failure', status: 'error' });
+            expect(result).toMatchObject({ result: 'Error: Intentional failure', status: 'error', tool: 'failing' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('failing', expect.any(Error));
             expect(handler.mock.calls[0]![1].message).toBe('Intentional failure');
@@ -341,7 +358,7 @@ describe('ToolSuite', () => {
             const handler = vi.fn();
             suite.hook().error().do(handler);
             const results = await suite.executeTool('throws_non_error', '{}');
-            expect(results[0]!).toEqual({ result: 'Error: string error value', status: 'error' });
+            expect(results[0]!).toMatchObject({ result: 'Error: string error value', status: 'error', tool: 'throws_non_error' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler.mock.calls[0]![1]).toBeInstanceOf(Error);
             expect(handler.mock.calls[0]![1].message).toBe('string error value');
@@ -414,7 +431,7 @@ describe('ToolSuite', () => {
             const handler = vi.fn();
             suite.on(ToolEvent.Error, handler);
             const results = await suite.executeTool('failing', '{}');
-            expect(results[0]!).toEqual({ result: 'Error: Intentional failure', status: 'error' });
+            expect(results[0]!).toMatchObject({ result: 'Error: Intentional failure', status: 'error', tool: 'failing' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('failing', expect.any(Error));
             expect(handler.mock.calls[0]![1].message).toBe('Intentional failure');
@@ -486,7 +503,7 @@ describe('ToolSuite', () => {
             const handler = vi.fn();
             suite.hook().error().do(handler);
             const results = await suite.executeTool('returns_error', '{}');
-            expect(results[0]!).toEqual({ result: 'handled error', status: 'error' });
+            expect(results[0]!).toMatchObject({ result: 'handled error', status: 'error', tool: 'returns_error' });
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith('returns_error', expect.any(Error));
             expect(handler.mock.calls[0]![1].message).toBe('handled error');
@@ -510,8 +527,8 @@ describe('ToolSuite', () => {
             suite.add(new MultiResultTool());
             const results = await suite.executeTool('multi', '{}');
             expect(results).toHaveLength(2);
-            expect(results[0]!).toEqual({ result: 'first', status: 'success' });
-            expect(results[1]!).toEqual({ result: 'second', status: 'error' });
+            expect(results[0]!).toMatchObject({ result: 'first', status: 'success', tool: 'multi' });
+            expect(results[1]!).toMatchObject({ result: 'second', status: 'error', tool: 'multi' });
         });
 
         it('fires After per success and Error per error in chain', async () => {
@@ -523,6 +540,56 @@ describe('ToolSuite', () => {
             await suite.executeTool('multi', '{}');
             expect(afterHandler).toHaveBeenCalledTimes(1);
             expect(errorHandler).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('executeTool silent', () => {
+        it('does not fire events when silent is true', async () => {
+            suite.add(new AlphaTool());
+            const beforeHandler = vi.fn();
+            const afterHandler = vi.fn();
+            suite.hook().before().do(beforeHandler);
+            suite.hook().after().do(afterHandler);
+
+            const results = await suite.executeTool('alpha', '{"x": "hello"}', true);
+
+            expect(results[0]!).toMatchObject({ result: 'Alpha: hello', status: 'success', tool: 'alpha' });
+            expect(beforeHandler).not.toHaveBeenCalled();
+            expect(afterHandler).not.toHaveBeenCalled();
+        });
+
+        it('suppresses error event for unknown tool when silent is true', async () => {
+            const errorHandler = vi.fn();
+            suite.hook().error().do(errorHandler);
+
+            const results = await suite.executeTool('unknown', '{}', true);
+
+            expect(results[0]!).toMatchObject({
+                result: "Error: No tool registered with name 'unknown'",
+                status: 'error',
+                tool: 'unknown'
+            });
+            expect(errorHandler).not.toHaveBeenCalled();
+        });
+
+        it('fires events by default when silent is undefined', async () => {
+            suite.add(new AlphaTool());
+            const beforeHandler = vi.fn();
+            suite.hook().before().do(beforeHandler);
+
+            await suite.executeTool('alpha', '{"x": "test"}');
+
+            expect(beforeHandler).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires events when silent is false', async () => {
+            suite.add(new AlphaTool());
+            const beforeHandler = vi.fn();
+            suite.hook().before().do(beforeHandler);
+
+            await suite.executeTool('alpha', '{"x": "test"}', false);
+
+            expect(beforeHandler).toHaveBeenCalledTimes(1);
         });
     });
  });

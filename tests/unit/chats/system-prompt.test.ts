@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ChatRole, Prompt, PromptContainer } from '../../../src/index.js';
-import { PromptComponent, ComponentType } from '../../../src/chats/system-prompt.js';
+import { PromptComponent, ComponentType } from '../../../src/chat/system-prompt.js';
 
 // ---------------------------------------------------------------------------
 // PromptComponent (abstract — exercised via Prompt and PromptContainer)

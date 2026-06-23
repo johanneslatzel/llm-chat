@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PropertyType, ResultStatus, Tool, ToolParameters, ToolParameterProperty, ResultBuilder, type PartialToolResult } from '../../../src/index.js';
+import { PropertyType, ResultStatus, Tool, ToolParameters, ToolParameterProperty, ObjectPropertyBuilder, ResultBuilder, type PartialToolResult } from '../../../src/index.js';
 
 class ConcreteTool extends Tool {
     constructor() {
@@ -172,6 +172,246 @@ describe('ToolParameterProperty', () => {
         const prop = new ToolParameterProperty('A number', PropertyType.Integer);
         expect(prop.type).toBe(PropertyType.Integer);
         expect(prop.description).toBe('A number');
+    });
+});
+
+describe('ToolParameterProperty — static factories', () => {
+    it('string creates a string-typed property', () => {
+        const prop = ToolParameterProperty.string('A name');
+        expect(prop.type).toBe(PropertyType.String);
+        expect(prop.description).toBe('A name');
+        expect(prop.properties).toBeUndefined();
+        expect(prop.required).toBeUndefined();
+        expect(prop.items).toBeUndefined();
+    });
+
+    it('number creates a number-typed property', () => {
+        const prop = ToolParameterProperty.number('A count');
+        expect(prop.type).toBe(PropertyType.Number);
+    });
+
+    it('integer creates an integer-typed property', () => {
+        const prop = ToolParameterProperty.integer('An index');
+        expect(prop.type).toBe(PropertyType.Integer);
+    });
+
+    it('boolean creates a boolean-typed property', () => {
+        const prop = ToolParameterProperty.boolean('A flag');
+        expect(prop.type).toBe(PropertyType.Boolean);
+    });
+
+    it('array creates an array-typed property with default string items', () => {
+        const prop = ToolParameterProperty.array('Tags');
+        expect(prop.type).toBe(PropertyType.Array);
+        expect(prop.items).toBeUndefined();
+    });
+
+    it('array accepts a ToolParameterProperty as items type', () => {
+        const prop = ToolParameterProperty.array('Scores', ToolParameterProperty.number('A score'));
+        expect(prop.type).toBe(PropertyType.Array);
+        expect(prop.items).toBeInstanceOf(ToolParameterProperty);
+        expect(prop.items!.type).toBe(PropertyType.Number);
+    });
+
+    it('array accepts object property as items for arrays of objects', () => {
+        const item = ToolParameterProperty.object('')
+            .addProperty('street', ToolParameterProperty.string('Street'))
+            .addProperty('zip', ToolParameterProperty.integer('ZIP'))
+            .setRequired('street')
+            .build();
+        const prop = ToolParameterProperty.array('Addresses', item);
+
+        expect(prop.type).toBe(PropertyType.Array);
+        expect(prop.items).toBe(item);
+    });
+
+    it('object returns an ObjectPropertyBuilder', () => {
+        const builder = ToolParameterProperty.object('Address');
+        expect(builder).toBeInstanceOf(ObjectPropertyBuilder);
+    });
+
+    it('builder constructs a valid object property', () => {
+        const prop = ToolParameterProperty.object('Address')
+            .addProperty('street', ToolParameterProperty.string('Street'))
+            .addProperty('zip', ToolParameterProperty.integer('ZIP'))
+            .setRequired('street', 'zip')
+            .build();
+
+        expect(prop.type).toBe(PropertyType.Object);
+        expect(prop.description).toBe('Address');
+        expect(prop.properties!).toHaveProperty('street');
+        expect(prop.properties!).toHaveProperty('zip');
+        expect(prop.required).toEqual(['street', 'zip']);
+    });
+
+    it('builder addProperty returns this for chaining', () => {
+        const builder = ToolParameterProperty.object('Obj')
+            .addProperty('a', ToolParameterProperty.string('A'))
+            .addProperty('b', ToolParameterProperty.string('B'));
+        expect(builder).toBeInstanceOf(ObjectPropertyBuilder);
+    });
+});
+
+describe('ToolParameterProperty — validation', () => {
+    it('allows empty required array', () => {
+        const prop = ToolParameterProperty.object('Obj')
+            .addProperty('x', ToolParameterProperty.string('X'))
+            .build();
+        expect(prop.required).toBeUndefined();
+    });
+
+    it('throws when object has no child properties', () => {
+        expect(() => new ToolParameterProperty('Empty', PropertyType.Object, {})).toThrow(
+            'has type object but no child properties'
+        );
+        expect(() => new ToolParameterProperty('Empty', PropertyType.Object, undefined)).toThrow(
+            'has type object but no child properties'
+        );
+    });
+
+    it('throws when object specifies items', () => {
+        const props = { x: new ToolParameterProperty('X') };
+        expect(() => new ToolParameterProperty('Bad', PropertyType.Object, props, undefined, ToolParameterProperty.string(''))).toThrow(
+            'has type object but also specifies items'
+        );
+    });
+
+    it('throws when object required key is not in properties', () => {
+        const props = { x: new ToolParameterProperty('X') };
+        expect(() => new ToolParameterProperty('Bad', PropertyType.Object, props, ['y'])).toThrow(
+            'has required key not present in properties'
+        );
+    });
+
+    it('throws when array specifies child properties', () => {
+        const props = { x: new ToolParameterProperty('X') };
+        expect(() => new ToolParameterProperty('Bad', PropertyType.Array, props)).toThrow(
+            'has type array but also specifies child properties'
+        );
+    });
+
+    it('throws when primitive has nested properties', () => {
+        const props = { x: new ToolParameterProperty('X') };
+        expect(() => new ToolParameterProperty('Bad', PropertyType.String, props)).toThrow(
+            'has primitive type but also specifies nested schema'
+        );
+    });
+
+    it('throws when primitive has items', () => {
+        expect(() => new ToolParameterProperty('Bad', PropertyType.Integer, undefined, undefined, ToolParameterProperty.string(''))).toThrow(
+            'has primitive type but also specifies nested schema'
+        );
+    });
+
+    it('throws when primitive has required', () => {
+        expect(() => new ToolParameterProperty('Bad', PropertyType.Boolean, undefined, ['x'])).toThrow(
+            'has primitive type but also specifies nested schema'
+        );
+    });
+});
+
+describe('ToolParameters — object-typed properties', () => {
+    it('serializes a nested object property with sub-properties and required', () => {
+        const params = new ToolParameters(
+            {
+                name: ToolParameterProperty.string('Full name'),
+                address: ToolParameterProperty.object('Mailing address')
+                    .addProperty('street', ToolParameterProperty.string('Street'))
+                    .addProperty('city', ToolParameterProperty.string('City'))
+                    .addProperty('zip', ToolParameterProperty.integer('ZIP'))
+                    .setRequired('street', 'city', 'zip')
+                    .build(),
+            },
+            ['name', 'address']
+        );
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string', description: 'Full name' },
+                address: {
+                    type: 'object',
+                    description: 'Mailing address',
+                    properties: {
+                        street: { type: 'string', description: 'Street' },
+                        city: { type: 'string', description: 'City' },
+                        zip: { type: 'integer', description: 'ZIP' },
+                    },
+                    required: ['street', 'city', 'zip'],
+                },
+            },
+            required: ['name', 'address'],
+        });
+    });
+
+    it('serializes deeply nested objects (2+ levels)', () => {
+        const params = new ToolParameters({
+            config: ToolParameterProperty.object('Config')
+                .addProperty(
+                    'database',
+                    ToolParameterProperty.object('DB settings')
+                        .addProperty('host', ToolParameterProperty.string('Host'))
+                        .addProperty('port', ToolParameterProperty.integer('Port'))
+                        .setRequired('host', 'port')
+                        .build()
+                )
+                .build(),
+        });
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json.properties.config.properties.database.properties).toHaveProperty('host');
+        expect(json.properties.config.properties.database.properties).toHaveProperty('port');
+        expect(json.properties.config.properties.database.required).toEqual(['host', 'port']);
+    });
+
+    it('object property without required omits the field', () => {
+        const params = new ToolParameters({
+            addr: ToolParameterProperty.object('Addr')
+                .addProperty('line1', ToolParameterProperty.string('Line 1'))
+                .build(),
+        });
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json.properties.addr.required).toBeUndefined();
+    });
+
+    it('serializes array with custom items via factory', () => {
+        const params = new ToolParameters({
+            scores: ToolParameterProperty.array('Scores', ToolParameterProperty.number('A score')),
+            tags: ToolParameterProperty.array('Tags'),
+        });
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json.properties.scores).toEqual({
+            type: 'array',
+            description: 'Scores',
+            items: { type: 'number', description: 'A score' },
+        });
+        expect(json.properties.tags).toEqual({
+            type: 'array',
+            description: 'Tags',
+            items: { type: 'string' },
+        });
+    });
+
+    it('serializes array of objects correctly', () => {
+        const item = ToolParameterProperty.object('')
+            .addProperty('street', ToolParameterProperty.string('Street'))
+            .addProperty('zip', ToolParameterProperty.integer('ZIP'))
+            .build();
+        const params = new ToolParameters({
+            addresses: ToolParameterProperty.array('Addresses', item),
+        });
+        const json = JSON.parse(JSON.stringify(params));
+        expect(json.properties.addresses).toEqual({
+            type: 'array',
+            description: 'Addresses',
+            items: {
+                type: 'object',
+                description: '',
+                properties: {
+                    street: { type: 'string', description: 'Street' },
+                    zip: { type: 'integer', description: 'ZIP' },
+                },
+            },
+        });
     });
 });
 

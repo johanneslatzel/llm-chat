@@ -49,5 +49,5 @@ chat.clear(true);    // hooks preserved
 ## Notes
 
 - Hooks are **not serialized** — re-register after `chatFromJSON()`
-- Async handlers are fire-and-forget (not awaited)
+- Async handlers in `do()` are awaited before the next message is processed
 - `MessageHook` defaults `maxTriggers` to `Infinity`

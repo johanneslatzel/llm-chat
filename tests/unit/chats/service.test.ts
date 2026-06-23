@@ -2,9 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import { ChatMessageOrigin, ChatRole, FinishReason, ChatService, ChatServiceConfiguration, Tool, ToolParameters, PartialToolResult, ResultStatus, ResultBuilder } from '../../../src/index.js';
-import { SystemPromptId } from '../../../src/chats/service.js';
-import { StreamEvent, StreamEventType } from '../../../src/chats/service.js';
-import { ChunkType } from '../../../src/chats/stream.js';
+import { SystemPromptId } from '../../../src/service/service.js';
+import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
+import { ChunkType } from '../../../src/service/stream-types.js';
 import { createTempDir, removeTempDir, createTempFile } from '../../index.js';
 import { TutorialPackage } from '../../helper/tool-mocks.js';
 
@@ -340,7 +340,8 @@ describe('ChatService', () => {
             const suite = (service as any)._tools;
             vi.spyOn(suite, 'executeTool').mockResolvedValue([{
                 result: 'Error: raw string error',
-                status: 'error'
+                status: 'error' as const,
+                tool: 'test_tool'
             }]);
 
             await service.send();
@@ -1381,6 +1382,438 @@ describe('ChatService', () => {
             expect(messages[1]!.role).toBe('assistant');
             expect(messages[1]!.content).toBe('default role: hello');
             expect(messages[1]!.origin).toBe(ChatMessageOrigin.Hook);
+        });
+    });
+
+    describe('service hooks', () => {
+        describe('hook firing order', () => {
+            it('fires beforeSendLoop, beforeSend, afterSend, afterSendLoop in correct order', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const order: string[] = [];
+                service.hook().beforeSendLoop().do(() => order.push('beforeSendLoop'));
+                service.hook().beforeSend().do(() => order.push('beforeSend'));
+                service.hook().afterSend().do(() => order.push('afterSend'));
+                service.hook().afterSendLoop().do(() => order.push('afterSendLoop'));
+                await service.send();
+                expect(order).toEqual(['beforeSendLoop', 'beforeSend', 'afterSend', 'afterSendLoop']);
+            });
+
+            it('fires beforeSend and afterSend once per iteration', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const befores: number[] = [];
+                const afters: number[] = [];
+                service.hook().beforeSend().do(() => befores.push(befores.length));
+                service.hook().afterSend().do(() => afters.push(afters.length));
+                await service.send();
+                expect(befores).toHaveLength(1);
+                expect(afters).toHaveLength(1);
+            });
+
+            it('fires beforeSendLoop and afterSendLoop exactly once', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const befores: number[] = [];
+                const afters: number[] = [];
+                service.hook().beforeSendLoop().do(() => befores.push(befores.length));
+                service.hook().afterSendLoop().do(() => afters.push(afters.length));
+                await service.send();
+                expect(befores).toHaveLength(1);
+                expect(afters).toHaveLength(1);
+            });
+        });
+
+        describe('hook control', () => {
+            it('beforeSend hook can inject messages via queue that go into current send', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Response' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                service.hook().beforeSend().do(() => {
+                    service.queue().user('Injected before send');
+                });
+                await service.send();
+                const messages = service.chatImpl.messages();
+                expect(messages).toHaveLength(2);
+                expect(messages[0]!.role).toBe('user');
+                expect(messages[0]!.content).toBe('Injected before send');
+                expect(messages[1]!.role).toBe('assistant');
+                expect(messages[1]!.content).toBe('Response');
+            });
+
+            it('afterSend hook can setNeedsResend to trigger retry', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'First' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                    { type: StreamEventType.Content, text: 'Second' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                let needsResendCalled = false;
+                service.hook().afterSend().do(() => {
+                    if (!needsResendCalled) {
+                        needsResendCalled = true;
+                        service.setNeedsResend();
+                    }
+                });
+                await service.send();
+                expect(needsResendCalled).toBe(true);
+                const messages = service.chatImpl.messages();
+                expect(messages).toHaveLength(2);
+                expect(messages[0]!.content).toBe('First');
+                expect(messages[1]!.content).toBe('Second');
+            });
+
+            it('beforeSendLoop hook can inject messages via queue', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                service.hook().beforeSendLoop().do(() => {
+                    service.queue().user('Injected in beforeSendLoop');
+                });
+                await service.send();
+                const messages = service.chatImpl.messages();
+                const userMessages = messages.filter((m) => m.role === 'user');
+                expect(userMessages).toHaveLength(1);
+                expect(userMessages[0]!.content).toBe('Injected in beforeSendLoop');
+            });
+
+            it('afterSendLoop hook can inject messages via queue (drained into chat)', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                service.hook().afterSendLoop().do(() => {
+                    service.queue().user('Injected in afterSendLoop');
+                });
+                await service.send();
+                const messages = service.chatImpl.messages();
+                expect(messages).toHaveLength(2);
+                expect(messages[0]!.role).toBe('assistant');
+                expect(messages[0]!.content).toBe('Hello');
+                expect(messages[1]!.role).toBe('user');
+                expect(messages[1]!.content).toBe('Injected in afterSendLoop');
+                const queued = await (service as any)._messageQueue.clear();
+                expect(queued).toHaveLength(0);
+            });
+        });
+
+        describe('hook disposal', () => {
+            it('dispose unsubscribes beforeSendLoop hook', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                    { type: StreamEventType.Content, text: 'B' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const calls: string[] = [];
+                const hook = service.hook().beforeSendLoop().do(() => calls.push('fired'));
+                hook.dispose();
+                await service.send();
+                expect(calls).toEqual([]);
+            });
+
+            it('dispose unsubscribes beforeSend hook', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const calls: string[] = [];
+                const hook = service.hook().beforeSend().do(() => calls.push('fired'));
+                hook.dispose();
+                await service.send();
+                expect(calls).toEqual([]);
+            });
+
+            it('dispose unsubscribes afterSend hook', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const calls: string[] = [];
+                const hook = service.hook().afterSend().do(() => calls.push('fired'));
+                hook.dispose();
+                await service.send();
+                expect(calls).toEqual([]);
+            });
+
+            it('dispose unsubscribes afterSendLoop hook', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const calls: string[] = [];
+                const hook = service.hook().afterSendLoop().do(() => calls.push('fired'));
+                hook.dispose();
+                await service.send();
+                expect(calls).toEqual([]);
+            });
+
+            it('isDisposed guard prevents callback when hook is disposed mid-cycle', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const calls: string[] = [];
+                const hook = service.hook().beforeSend().do(() => calls.push('fired'));
+                // Prevent onDispose from unregistering the handler, then dispose.
+                // On the next event emission _onEvent fires but isDisposed returns
+                // true, exercising the guard in service-hooks.ts:59.
+                vi.spyOn(hook as any, 'onDispose').mockImplementation(() => {});
+                hook.dispose();
+                await service.send();
+                expect(calls).toEqual([]);
+            });
+        });
+
+        describe('multiple hooks', () => {
+            it('fires multiple hooks on the same event in registration order', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const order: number[] = [];
+                service.hook().beforeSend().do(() => order.push(1));
+                service.hook().beforeSend().do(() => order.push(2));
+                service.hook().beforeSend().do(() => order.push(3));
+                await service.send();
+                expect(order).toEqual([1, 2, 3]);
+            });
+        });
+
+        describe('hook errors', () => {
+            it('throwing in beforeSend hook does not crash the service', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+                service.hook().beforeSend().do(() => { throw new Error('hook error'); });
+                await expect(service.send()).resolves.toBeUndefined();
+                expect(spy).toHaveBeenCalledWith('Hook callback error:', expect.any(Error));
+                spy.mockRestore();
+            });
+
+            it('throwing in afterSend hook does not crash the service', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+                service.hook().afterSend().do(() => { throw new Error('hook error'); });
+                await expect(service.send()).resolves.toBeUndefined();
+                expect(spy).toHaveBeenCalledWith('Hook callback error:', expect.any(Error));
+                spy.mockRestore();
+            });
+        });
+
+        describe('reentrant send from hooks', () => {
+            it('reentrant send() from beforeSendLoop does not deadlock (single iteration)', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const iterations: string[] = [];
+                service.hook().beforeSend().do(() => iterations.push('before'));
+                service.hook().afterSend().do(() => iterations.push('after'));
+                service.hook().beforeSendLoop().do(() => {
+                    service.send(); // reentrant
+                });
+                await service.send();
+                expect(iterations).toEqual(['before', 'after']);
+            });
+
+            it('reentrant send() from afterSend triggers extra iteration', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'A' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                    { type: StreamEventType.Content, text: 'B' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                let called = false;
+                service.hook().afterSend().do(() => {
+                    if (!called) {
+                        called = true;
+                        service.send(); // reentrant
+                    }
+                });
+                await service.send();
+                const messages = service.chatImpl.messages();
+                expect(messages).toHaveLength(2);
+                expect(messages[0]!.content).toBe('A');
+                expect(messages[1]!.content).toBe('B');
+            });
+
+            it('reentrant send() does not deadlock', async () => {
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Hello' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+                const service = new TestChatService(events);
+                const wait = new Promise<void>((resolve) => {
+                    service.hook().beforeSendLoop().do(() => {
+                        service.send().then(resolve);
+                    });
+                });
+                await service.send();
+                await expect(wait).resolves.toBeUndefined();
+            });
+        });
+
+        describe('hook() accessor', () => {
+            it('returns a ServiceHookBuilder', () => {
+                const service = new TestChatService([]);
+                const builder = service.hook();
+                expect(builder).toBeDefined();
+                expect(typeof builder.beforeSendLoop).toBe('function');
+                expect(typeof builder.afterSendLoop).toBe('function');
+                expect(typeof builder.beforeSend).toBe('function');
+                expect(typeof builder.afterSend).toBe('function');
+            });
+        });
+    });
+
+    describe('trimMessages', () => {
+        it('trims assistant content when trimMessages is true', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.trimMessages = true;
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: '\n\n  Hello World \n' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events, cfg);
+            await service.send();
+            const messages = service.chatImpl.messages();
+            const last = messages[messages.length - 1]!;
+            expect(last.content).toBe('Hello World');
+        });
+
+        it('trims reasoning content when trimMessages is true', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.trimMessages = true;
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Reasoning, text: '\n  Thinking... \n' },
+                { type: StreamEventType.Content, text: 'Answer' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events, cfg);
+            await service.send();
+            const reasoning = service.chatImpl.messages().filter((m) => m.role === ChatRole.Reasoning);
+            expect(reasoning).toHaveLength(1);
+            expect(reasoning[0]!.content).toBe('Thinking...');
+        });
+
+        it('does not trim when trimMessages is false (default)', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: '\n  Hello World \n' },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events, cfg);
+            await service.send();
+            const messages = service.chatImpl.messages();
+            const last = messages[messages.length - 1]!;
+            expect(last.content).toBe('\n  Hello World \n');
+        });
+    });
+
+    describe('ChatService.injectToolCall', () => {
+        class MultiInjectTool extends Tool {
+            constructor() {
+                super('multi_inject', 'Returns multiple results', new ToolParameters({}));
+            }
+            protected async onExecute(_args: Record<string, unknown>): Promise<PartialToolResult> {
+                return ResultBuilder.from([
+                    { result: 'result-a', status: ResultStatus.Success },
+                    { result: 'result-b', status: ResultStatus.Error }
+                ]).build();
+            }
+        }
+
+        it('queues assistant message with tool call and tool result', async () => {
+            const tool = new SimpleTestTool('inject_test', 'injected result');
+            const service = new TestChatService([]);
+            service.tools().add(tool);
+
+            const assistantSpy = vi.spyOn(service.queue(), 'assistant');
+            const toolSpy = vi.spyOn(service.queue(), 'tool');
+
+            await service.injectToolCall('inject_test', { input: 'hello' });
+
+            expect(assistantSpy).toHaveBeenCalledTimes(1);
+            expect(assistantSpy).toHaveBeenCalledWith('', [
+                expect.objectContaining({
+                    type: 'function',
+                    function: expect.objectContaining({ name: 'inject_test' })
+                })
+            ]);
+
+            expect(toolSpy).toHaveBeenCalledTimes(1);
+            expect(toolSpy).toHaveBeenCalledWith('injected result', expect.any(String));
+            const toolCallId = toolSpy.mock.calls[0]![1];
+            expect(toolCallId).toMatch(/^inject_test-\d+-\d+$/);
+        });
+
+        it('queues one tool message per multi-result entry', async () => {
+            const tool = new MultiInjectTool();
+            const service = new TestChatService([]);
+            service.tools().add(tool);
+            const toolSpy = vi.spyOn(service.queue(), 'tool');
+
+            await service.injectToolCall('multi_inject', {});
+
+            expect(toolSpy).toHaveBeenCalledTimes(2);
+            expect(toolSpy).toHaveBeenNthCalledWith(1, 'result-a', expect.any(String));
+            expect(toolSpy).toHaveBeenNthCalledWith(2, 'result-b', expect.any(String));
+            const id = toolSpy.mock.calls[0]![1];
+            expect(toolSpy.mock.calls[1]![1]).toBe(id);
+        });
+
+        it('does not call interrupt or send', async () => {
+            const service = new TestChatService([]);
+            service.tools().add(new SimpleTestTool('no_send', 'result'));
+
+            const sendSpy = vi.spyOn(service, 'send');
+            const interruptSpy = vi.spyOn(service, 'interrupt');
+
+            await service.injectToolCall('no_send', {});
+
+            expect(sendSpy).not.toHaveBeenCalled();
+            expect(interruptSpy).not.toHaveBeenCalled();
+        });
+
+        it('throws for unknown tool name', async () => {
+            const service = new TestChatService([]);
+            await expect(service.injectToolCall('nonexistent', {})).rejects.toThrow(
+                "No tool registered with name 'nonexistent'"
+            );
         });
     });
 });

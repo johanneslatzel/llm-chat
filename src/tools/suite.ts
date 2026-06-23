@@ -1,46 +1,11 @@
 import OpenAI from 'openai';
-import { Tool, ToolResult, ResultStatus } from './base.js';
-import { Hook } from '../hooks/hook.js';
-import { HookBuilderBase, HasHooks } from '../hooks/hook-builder.js';
-import { Prompt, PromptContainer } from '../chats/system-prompt.js';
-
-export enum ToolEvent {
-    Before = 'before',
-    After = 'after',
-    Error = 'error'
-}
-
-export type ToolEventMap = {
-    [ToolEvent.Before]: [name: string, args: Record<string, unknown>];
-    [ToolEvent.After]: [result: ToolResult];
-    [ToolEvent.Error]: [name: string, error: Error];
-};
-
-export type ToolHookOptions = {
-    tools?: string[];
-};
-
-/** A bundle of related tools that can be registered together. */
-export abstract class ToolPackage {
-    #tools: Tool[] = [];
-
-    constructor(tools: Tool[] = []) {
-        this.#tools = [...tools];
-    }
-
-    tools(): Tool[] {
-        return this.#tools;
-    }
-
-    protected add(tool: Tool): void {
-        this.#tools.push(tool);
-    }
-
-    /** Returns a usage tutorial for this package, or null if none. */
-    tutorial(): string | null {
-        return null;
-    }
-}
+import { Tool } from './tool.js';
+import { ResultStatus, ToolResult } from './result.js';
+import { ToolPackage } from './package.js';
+import { ToolEvent, ToolEventMap, ToolEventTarget, ToolHookBuilder } from './hook.js';
+export { ToolEvent };
+import { HasHooks } from '../hooks/hook-builder.js';
+import { Prompt, PromptContainer } from '../chat/system-prompt.js';
 
 /** Tool registry that stores tool instances and exposes them to the service. */
 export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
@@ -53,92 +18,11 @@ export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
     clear(retainHooks?: boolean): void;
     /** Rebuild tutorial entries from all registered packages. */
     rebuildTutorials(): void;
+    /** Look up a tool by name. Returns `undefined` if not found. */
+    get(name: string): Tool | undefined;
 }
 
-abstract class BaseToolHook extends Hook {
-    protected options: ToolHookOptions;
-    private _off: () => void;
-
-    constructor(options: ToolHookOptions, suite: ToolSuite, off: () => void) {
-        super();
-        this.options = options;
-        this._off = off;
-    }
-
-    protected _matches(name: string): boolean {
-        if (!this.options.tools || this.options.tools.length === 0) return true;
-        return this.options.tools.includes(name);
-    }
-
-    protected onDispose(): void {
-        this._off();
-    }
-}
-
-class BeforeHook extends BaseToolHook {
-    private _handler: (name: string, args: Record<string, unknown>) => void | Promise<void>;
-
-    private _onEvent = (name: string, args: Record<string, unknown>): void => {
-        if (this.isDisposed()) return;
-        if (this._matches(name)) {
-            this.safeInvoke(() => this._handler(name, args));
-        }
-    };
-
-    constructor(
-        options: ToolHookOptions,
-        suite: ToolSuite,
-        handler: (name: string, args: Record<string, unknown>) => void | Promise<void>
-    ) {
-        super(options, suite, () => suite.off(ToolEvent.Before, this._onEvent));
-        this._handler = handler;
-        suite.on(ToolEvent.Before, this._onEvent);
-    }
-}
-
-class AfterHook extends BaseToolHook {
-    private _handler: (result: ToolResult) => void | Promise<void>;
-
-    private _onEvent = (result: ToolResult): void => {
-        if (this.isDisposed()) return;
-        if (this._matches(result.tool)) {
-            this.safeInvoke(() => this._handler(result));
-        }
-    };
-
-    constructor(
-        options: ToolHookOptions,
-        suite: ToolSuite,
-        handler: (result: ToolResult) => void | Promise<void>
-    ) {
-        super(options, suite, () => suite.off(ToolEvent.After, this._onEvent));
-        this._handler = handler;
-        suite.on(ToolEvent.After, this._onEvent);
-    }
-}
-
-class ErrorHook extends BaseToolHook {
-    private _handler: (name: string, error: Error) => void | Promise<void>;
-
-    private _onEvent = (name: string, error: Error): void => {
-        if (this.isDisposed()) return;
-        if (this._matches(name)) {
-            this.safeInvoke(() => this._handler(name, error));
-        }
-    };
-
-    constructor(
-        options: ToolHookOptions,
-        suite: ToolSuite,
-        handler: (name: string, error: Error) => void | Promise<void>
-    ) {
-        super(options, suite, () => suite.off(ToolEvent.Error, this._onEvent));
-        this._handler = handler;
-        suite.on(ToolEvent.Error, this._onEvent);
-    }
-}
-
-export class ToolSuite {
+export class ToolSuite implements ToolEventTarget {
     #tools: Record<string, Tool> = {};
     #packages: ToolPackage[] = [];
     #tutorialContainer: PromptContainer | null = null;
@@ -159,8 +43,11 @@ export class ToolSuite {
         this.listeners.get(event)?.delete(handler as (...args: unknown[]) => void);
     }
 
-    private emit<E extends ToolEvent>(event: E, ...args: ToolEventMap[E]): void {
-        this.listeners.get(event)?.forEach((handler) => handler(...args));
+    private async emit<E extends ToolEvent>(event: E, ...args: ToolEventMap[E]): Promise<void> {
+        const handlers = this.listeners.get(event);
+        if (handlers) {
+            for (const handler of handlers) await handler(...args);
+        }
     }
 
     add(item: Tool | ToolPackage): void {
@@ -232,24 +119,33 @@ export class ToolSuite {
         }
     }
 
+    /** Look up a tool by name. Returns `undefined` if not found. */
+    get(name: string): Tool | undefined {
+        return this.#tools[name];
+    }
+
     // Public hook entry
     hook(): ToolHookBuilder {
         return new ToolHookBuilder(this);
     }
 
-    async executeTool(
-        name: string,
-        args: string
-    ): Promise<{ result: string; status: ResultStatus }[]> {
+    async executeTool(name: string, args: string, silent?: boolean): Promise<ToolResult[]> {
         const tool = this.#tools[name];
         if (!tool) {
             const message = "No tool registered with name '" + name + "'";
-            this.emit(ToolEvent.Error, name, new Error(message));
-            return [{ result: 'Error: ' + message, status: ResultStatus.Error }];
+            if (silent !== true) await this.emit(ToolEvent.Error, name, new Error(message));
+            return [
+                {
+                    result: 'Error: ' + message,
+                    status: ResultStatus.Error,
+                    tool: name,
+                    error: new Error(message)
+                }
+            ];
         }
         const parsedArgs = JSON.parse(args);
 
-        this.emit(ToolEvent.Before, name, parsedArgs);
+        if (silent !== true) await this.emit(ToolEvent.Before, name, parsedArgs);
 
         const toolResults = await tool.execute(parsedArgs);
 
@@ -259,77 +155,12 @@ export class ToolSuite {
                     toolResult.error instanceof Error
                         ? toolResult.error
                         : new Error(String(toolResult.error ?? toolResult.result));
-                this.emit(ToolEvent.Error, name, error);
+                if (silent !== true) await this.emit(ToolEvent.Error, name, error);
             } else {
-                this.emit(ToolEvent.After, toolResult);
+                if (silent !== true) await this.emit(ToolEvent.After, toolResult);
             }
         }
 
-        return toolResults.map((toolResult) => ({
-            result: toolResult.result,
-            status: toolResult.status
-        }));
-    }
-}
-
-// --- Public hook builder ---
-
-export class ToolHookBuilder {
-    private _filter: string[] | undefined;
-
-    constructor(private _suite: ToolSuite) {}
-
-    filter(...names: string[]): this {
-        this._filter = names;
-        return this;
-    }
-
-    before(): ToolHookFilterBuilder<(name: string, args: Record<string, unknown>) => void> {
-        return new ToolHookFilterBuilder(this._suite, ToolEvent.Before, this._filter);
-    }
-
-    after(): ToolHookFilterBuilder<(result: ToolResult) => void> {
-        return new ToolHookFilterBuilder(this._suite, ToolEvent.After, this._filter);
-    }
-
-    error(): ToolHookFilterBuilder<(name: string, error: Error) => void> {
-        return new ToolHookFilterBuilder(this._suite, ToolEvent.Error, this._filter);
-    }
-}
-
-type ToolHookHandler = (...args: any[]) => void | Promise<void>;
-
-class ToolHookFilterBuilder<TCallback extends ToolHookHandler> extends HookBuilderBase<TCallback> {
-    constructor(
-        private _suite: ToolSuite,
-        private _event: ToolEvent,
-        private _filter: string[] | undefined
-    ) {
-        super();
-    }
-
-    do(handler: TCallback): Hook {
-        const options: ToolHookOptions = this._filter ? { tools: this._filter } : {};
-        const { _suite: suite, _event: event } = this;
-        switch (event) {
-            case ToolEvent.Before:
-                return new BeforeHook(
-                    options,
-                    suite,
-                    handler as (name: string, args: Record<string, unknown>) => void | Promise<void>
-                );
-            case ToolEvent.After:
-                return new AfterHook(
-                    options,
-                    suite,
-                    handler as (result: ToolResult) => void | Promise<void>
-                );
-            case ToolEvent.Error:
-                return new ErrorHook(
-                    options,
-                    suite,
-                    handler as (name: string, error: Error) => void | Promise<void>
-                );
-        }
+        return toolResults;
     }
 }

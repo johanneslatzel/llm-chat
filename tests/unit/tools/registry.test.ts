@@ -43,9 +43,10 @@ describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
 
     it('executeTool returns error for unknown tool name', async () => {
         const results = await registry.executeTool('unknown', '{}');
-        expect(results[0]!).toEqual({
+        expect(results[0]!).toMatchObject({
             result: "Error: No tool registered with name 'unknown'",
-            status: ResultStatus.Error
+            status: ResultStatus.Error,
+            tool: 'unknown'
         });
     });
 

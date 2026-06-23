@@ -3,50 +3,9 @@ import type {
     ChatCompletionMessageParam,
     ChatCompletionCreateParamsStreaming
 } from 'openai/resources/chat/completions';
-import { envInt, envFloat, envString } from '../env.js';
-import { ChatMessage, ChatRole } from './chat.js';
+import { ChatMessage, ChatMessageOrigin, ChatRole, FinishReason } from '../chat/types.js';
 import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } from './service.js';
-import { FinishReason } from './chat.js';
-
-/** Configuration for {@link OpenAIChatService}. Most fields can be set via environment variables. */
-export class OpenAIChatServiceConfiguration {
-    /** The OpenAI model to use (env: `LLM_CHAT_OPENAI_DEFAULT_MODEL`). */
-    model?: string = envString('LLM_CHAT_OPENAI_DEFAULT_MODEL', '') || undefined;
-    /** Sampling temperature (env: `LLM_CHAT_OPENAI_TEMPERATURE`). */
-    temperature?: number = (() => {
-        const raw = process.env['LLM_CHAT_OPENAI_TEMPERATURE'];
-        if (raw === undefined || raw === '') return undefined;
-        const n = envFloat('LLM_CHAT_OPENAI_TEMPERATURE', NaN);
-        return Number.isNaN(n) ? undefined : n;
-    })();
-    /** Max output tokens (env: `LLM_CHAT_OPENAI_MAX_TOKENS`). Superseded by {@link maxCompletionTokens} when both are set. */
-    maxTokens?: number = (() => {
-        const raw = process.env['LLM_CHAT_OPENAI_MAX_TOKENS'];
-        if (raw === undefined || raw === '') return undefined;
-        const n = envInt('LLM_CHAT_OPENAI_MAX_TOKENS', 0, 0);
-        return n || undefined;
-    })();
-    /** Max completion tokens (env: `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS`). Takes precedence over {@link maxTokens}. */
-    maxCompletionTokens?: number = (() => {
-        const raw = process.env['LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS'];
-        if (raw === undefined || raw === '') return undefined;
-        const n = envInt('LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS', 0, 0);
-        return n || undefined;
-    })();
-    /** Stop sequences. */
-    stop?: string | string[];
-    /** Top-p nucleus sampling (env: `LLM_CHAT_OPENAI_TOP_P`). */
-    topP?: number = (() => {
-        const raw = process.env['LLM_CHAT_OPENAI_TOP_P'];
-        if (raw === undefined || raw === '') return undefined;
-        const n = envFloat('LLM_CHAT_OPENAI_TOP_P', NaN);
-        return Number.isNaN(n) ? undefined : n;
-    })();
-    /** Filter out reasoning messages before sending (default: `true`). */
-    filterReasoning?: boolean = true;
-    /** Prepend each message with a local ISO timestamp (default: `false`). */
-    prefixWithTimestamp?: boolean = false;
-}
+import { OpenAIChatServiceConfiguration } from './config.js';
 
 function toFinishReason(raw: string | null | undefined): FinishReason | null {
     switch (raw) {
@@ -80,7 +39,8 @@ function toLocalISOString(d: Date): string {
 function toOpenAIMessages(
     messages: ChatMessage[],
     filterReasoning: boolean,
-    prefixWithTimestamp: boolean
+    prefixWithTimestamp: boolean,
+    mapSystemToDeveloper: boolean
 ): ChatCompletionMessageParam[] {
     return messages
         .filter((msg) => !filterReasoning || msg.role !== ChatRole.Reasoning)
@@ -91,7 +51,12 @@ function toOpenAIMessages(
             const base = { content } as Record<string, unknown>;
             switch (msg.role) {
                 case ChatRole.System:
-                    return { ...base, role: 'system' } as ChatCompletionMessageParam;
+                    return {
+                        ...base,
+                        role: mapSystemToDeveloper ? 'developer' : 'system'
+                    } as ChatCompletionMessageParam;
+                case ChatRole.Developer:
+                    return { ...base, role: 'developer' } as ChatCompletionMessageParam;
                 case ChatRole.User:
                     return { ...base, role: 'user' } as ChatCompletionMessageParam;
                 case ChatRole.Assistant:
@@ -114,13 +79,8 @@ function toOpenAIMessages(
         });
 }
 
-/** OpenAI provider. Extends {@link ChatService} with OpenAI-compatible streaming. */
+/** OpenAI provider implementation of {@link ChatService}. */
 export class OpenAIChatService extends ChatService {
-    /**
-     * @param api         - OpenAI client instance (defaults to `new OpenAI()`).
-     * @param openAIConfig - Configuration for model, temperature, etc.
-     * @param config      - Base service configuration (prompt files, tool rounds, etc.).
-     */
     constructor(
         private api: OpenAI = new OpenAI(),
         private openAIConfig: OpenAIChatServiceConfiguration = new OpenAIChatServiceConfiguration(),
@@ -136,12 +96,20 @@ export class OpenAIChatService extends ChatService {
 
     protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
         const chatMessages = this.chatImpl.messages();
-        const systemMessage = this.chatImpl.getSystem();
+        const systemMessage = this.config.systemPrompt
+            ? ({
+                  role: ChatRole.System,
+                  content: this.config.systemPrompt,
+                  createdAt: new Date(),
+                  origin: ChatMessageOrigin.System
+              } as ChatMessage)
+            : this.chatImpl.getSystem();
         const allMessages = systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
         const messages = toOpenAIMessages(
             allMessages,
             this.openAIConfig.filterReasoning ?? true,
-            this.openAIConfig.prefixWithTimestamp ?? false
+            this.openAIConfig.prefixWithTimestamp ?? false,
+            this.openAIConfig.useDeveloperRole ?? false
         );
         const openaiTools = this._tools.getTools();
 
@@ -160,6 +128,15 @@ export class OpenAIChatService extends ChatService {
                       : {}),
                 ...(this.openAIConfig?.stop !== undefined ? { stop: this.openAIConfig.stop } : {}),
                 ...(this.openAIConfig?.topP !== undefined ? { top_p: this.openAIConfig.topP } : {}),
+                ...(this.openAIConfig?.reasoningEffort !== undefined
+                    ? { reasoning_effort: this.openAIConfig.reasoningEffort }
+                    : {}),
+                ...(this.openAIConfig?.toolChoice !== undefined
+                    ? { tool_choice: this.openAIConfig.toolChoice }
+                    : {}),
+                ...(this.openAIConfig?.verbosity !== undefined
+                    ? { verbosity: this.openAIConfig.verbosity }
+                    : {}),
                 stream: true
             } as ChatCompletionCreateParamsStreaming,
             { signal }
@@ -173,9 +150,39 @@ export class OpenAIChatService extends ChatService {
                 yield { type: StreamEventType.Content, text: delta.content };
             }
 
-            const reasoning = (delta as Record<string, unknown>)['reasoning_content'];
-            if (typeof reasoning === 'string') {
-                yield { type: StreamEventType.Reasoning, text: reasoning };
+            // Reasoning appears in stream deltas across different providers.
+            // Extract from whatever field is populated, in priority order:
+            //   1. reasoning_details (structured array) — OpenRouter/Anthropic
+            //   2. reasoning (plain string) — used by Ollama and others
+            //   3. reasoning_content (plain string) — de facto standard:
+            //      OpenAI, DeepSeek, vLLM, and most OpenAI-compatible providers
+            // When both reasoning_details and a flat string appear in the same
+            // chunk (some OpenRouter routes), the array is preferred to avoid
+            // duplicate emission.
+            const details = (delta as Record<string, unknown>)['reasoning_details'];
+            if (Array.isArray(details)) {
+                for (const d of details) {
+                    if (
+                        d?.type === 'reasoning.text' &&
+                        typeof d.text === 'string' &&
+                        d.text.length > 0
+                    ) {
+                        yield { type: StreamEventType.Reasoning, text: d.text };
+                    } else if (
+                        d?.type === 'reasoning.summary' &&
+                        typeof d.summary === 'string' &&
+                        d.summary.length > 0
+                    ) {
+                        yield { type: StreamEventType.Reasoning, text: d.summary };
+                    }
+                }
+            } else {
+                const flat =
+                    (delta as Record<string, unknown>)['reasoning'] ??
+                    (delta as Record<string, unknown>)['reasoning_content'];
+                if (typeof flat === 'string' && flat.length > 0) {
+                    yield { type: StreamEventType.Reasoning, text: flat };
+                }
             }
 
             if (delta.tool_calls) {

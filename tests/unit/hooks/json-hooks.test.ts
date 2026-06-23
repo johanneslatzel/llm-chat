@@ -3,11 +3,13 @@ import { writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JsonHookRegistry } from '../../../src/hooks/json-hooks.js';
-import { Chat } from '../../../src/chats/chat.js';
-import { ChunkStream } from '../../../src/chats/stream.js';
+import { Chat } from '../../../src/chat/chat.js';
+import { ChunkStream } from '../../../src/service/stream.js';
 import { ToolSuite } from '../../../src/tools/suite.js';
-import { Tool, ToolParameters, ResultStatus } from '../../../src/tools/base.js';
-import type { PartialToolResult } from '../../../src/tools/base.js';
+import { Tool } from '../../../src/tools/tool.js';
+import { ToolParameters } from '../../../src/tools/parameter.js';
+import { ResultStatus } from '../../../src/tools/result.js';
+import type { PartialToolResult } from '../../../src/tools/result.js';
 
 function createTempDir(): string {
     return mkdtempSync(join(tmpdir(), 'json-hooks-test-'));

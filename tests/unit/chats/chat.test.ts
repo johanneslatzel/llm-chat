@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ChatMessageOrigin, ChatRole, chatFromJSON, Prompt, type ToolCall } from '../../../src/index.js';
-import { Chat } from '../../../src/chats/chat.js';
+import { Chat } from '../../../src/chat/chat.js';
 
 describe('Chat', async () => {
     describe('system message', async () => {

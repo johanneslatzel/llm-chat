@@ -1,12 +1,12 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { Hook } from './hook.js';
-import { ChatMessageOrigin, ChatRole, type HookMessageWriter } from '../chats/chat.js';
-import { ChunkType } from '../chats/stream.js';
-import type { ToolResult } from '../tools/base.js';
-import type { ChatHookBuilder } from '../chats/chat.js';
-import type { StreamHookBuilder } from '../chats/stream.js';
-import type { ToolHookBuilder } from '../tools/suite.js';
+import { ChatMessageOrigin, ChatRole, type HookMessageWriter } from '../chat/types.js';
+import { ChunkType } from '../service/stream-types.js';
+import type { ToolResult } from '../tools/result.js';
+import type { ChatHookBuilder } from '../chat/hooks.js';
+import type { StreamHookBuilder } from '../service/stream.js';
+import type { ToolHookBuilder } from '../tools/hook.js';
 
 export type JsonHookTarget = 'chat' | 'stream' | 'tool';
 
@@ -236,6 +236,12 @@ export class JsonHookRegistry {
         if (def.regex) builder = builder.regex(def.regex);
         if (def.maxTriggers !== undefined) builder = builder.maxTriggers(def.maxTriggers);
         return builder.do((message, matches) => {
+            // Ignore Hook-origin messages to prevent infinite loops:
+            // a queue-message action queues a message with origin=Hook, which
+            // gets drained into chat by send(), but should NOT re-trigger
+            // the same hook. Non-Hook origins (User, Model, Tool, System)
+            // are processed normally.
+            if (message.origin === ChatMessageOrigin.Hook) return;
             this._executeActions(def, {
                 label: def.label ?? '',
                 target: def.target,

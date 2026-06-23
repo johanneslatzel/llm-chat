@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ChatMessage, ChatMessageOrigin, ChatRole } from './chat.js';
+import { ChatMessage, ChatMessageOrigin, ChatRole } from './types.js';
 
 const INDENTATION = '    ';
 
@@ -91,6 +91,7 @@ export abstract class PromptComponent {
     }
 }
 
+/** A single leaf prompt component with a title and content string. */
 export class Prompt extends PromptComponent {
     constructor(
         title: string,
@@ -108,14 +109,17 @@ export class Prompt extends PromptComponent {
         this.invalidate();
     }
 
+    /** Whether the prompt has any content. */
     hasContent(): boolean {
         return this._content.length > 0;
     }
 
+    /** The raw content string (without title prefix). */
     content(): string {
         return this._content;
     }
 
+    /** Set the raw content string. */
     setContent(content: string): void {
         this._content = content;
         this.invalidate();
@@ -132,6 +136,7 @@ export class Prompt extends PromptComponent {
         return lines.join('\n');
     }
 
+    /** Serialise to JSON. */
     toJSON(): ComponentJSON {
         return {
             type: ComponentType.Prompt,
@@ -142,6 +147,7 @@ export class Prompt extends PromptComponent {
     }
 }
 
+/** A prompt container that groups child components (prompts or nested containers). */
 export class PromptContainer extends PromptComponent {
     private _components: PromptComponent[] = [];
 
@@ -149,12 +155,14 @@ export class PromptContainer extends PromptComponent {
         super(title, id);
     }
 
+    /** Add a child component. */
     add(component: PromptComponent): void {
         component.setParent(this);
         this._components.push(component);
         this.invalidate();
     }
 
+    /** Whether any child component has content. */
     hasContent(): boolean {
         for (const component of this._components) {
             if (component.hasContent()) return true;
@@ -162,10 +170,12 @@ export class PromptContainer extends PromptComponent {
         return false;
     }
 
+    /** The composed content of all children. */
     content(): string {
         return this.compose();
     }
 
+    /** Get or create a child container by id. */
     child(id: string): PromptContainer {
         const existing = this._components.find((c) => c.id() === id);
         if (existing) {
@@ -179,6 +189,7 @@ export class PromptContainer extends PromptComponent {
         return c;
     }
 
+    /** Get or create a child prompt by id. */
     prompt(id: string): Prompt {
         const existing = this._components.find((c) => c.id() === id);
         if (existing) {
@@ -213,6 +224,7 @@ export class PromptContainer extends PromptComponent {
         return `${this.title()}\n${indented}`;
     }
 
+    /** Serialise to JSON. */
     toJSON(): ComponentJSON {
         return {
             type: ComponentType.Container,

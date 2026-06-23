@@ -52,6 +52,56 @@ new ToolParameterProperty("Tags", PropertyType.Array)
 new ToolParameterProperty("Is enabled", PropertyType.Boolean)
 ```
 
+### Static factory methods
+
+The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases you can use the static factories — they are shorter, self-documenting, and require no `PropertyType` import:
+
+```ts
+ToolParameterProperty.string("A name")
+ToolParameterProperty.number("A numeric value")
+ToolParameterProperty.integer("An integer count")
+ToolParameterProperty.boolean("A true/false flag")
+ToolParameterProperty.array("A list of strings")                             // items default to string
+ToolParameterProperty.array("A list of scores", ToolParameterProperty.number("A score"))  // custom item type
+ToolParameterProperty.array("A list of addresses", ToolParameterProperty.object("")
+    .addProperty("street", ToolParameterProperty.string("Street"))
+    .build()
+)                                                                           // array of objects
+ToolParameterProperty.object("A nested object")                              // returns a builder (see below)
+```
+
+### Nested object parameters
+
+For parameters that are objects with their own sub-properties, use `ToolParameterProperty.object(desc)` which returns an `ObjectPropertyBuilder`:
+
+```ts
+new ToolParameters({
+    name: ToolParameterProperty.string("Full name"),
+    address: ToolParameterProperty.object("Mailing address")
+        .addProperty("street", ToolParameterProperty.string("Street name"))
+        .addProperty("city", ToolParameterProperty.string("City"))
+        .addProperty("zip", ToolParameterProperty.integer("ZIP code"))
+        .setRequired("street", "city", "zip")
+        .build(),
+}, ["name", "address"])
+```
+
+Objects can nest arbitrarily deep:
+
+```ts
+ToolParameterProperty.object("Config")
+    .addProperty(
+        "database",
+        ToolParameterProperty.object("Database settings")
+            .addProperty("host", ToolParameterProperty.string("Hostname"))
+            .addProperty("port", ToolParameterProperty.integer("Port"))
+            .build()
+    )
+    .build()
+```
+
+The builder only exposes methods valid for objects (`addProperty`, `setRequired`, `build`).
+
 ### Multiple results
 
 A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult` — the return type stays `PartialToolResult` regardless of how many results the builder chains.
@@ -92,4 +142,4 @@ return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
 ```
 
 The `onExecute` signature stays `Promise<PartialToolResult>` — only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
-```
+

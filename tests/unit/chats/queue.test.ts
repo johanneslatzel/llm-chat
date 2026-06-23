@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MessageQueue } from '../../../src/chats/queue.js';
-import { ChatRole } from '../../../src/chats/chat.js';
+import { MessageQueue } from '../../../src/chat/queue.js';
+import { ChatRole } from '../../../src/chat/types.js';
 
 describe('MessageQueue', () => {
     it('queues and clears user message', async () => {

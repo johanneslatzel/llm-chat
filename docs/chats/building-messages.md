@@ -9,8 +9,11 @@
 ## System prompt
 
 The system prompt is built from a tree of components via `chat.system()`, which
-returns the root `PromptContainer`. Two standard child containers are available
-for organisation:
+returns the root `PromptContainer`. To bypass the tree entirely and send a
+single flat string, set `ChatServiceConfiguration.systemPrompt` — see
+[Flat system prompt](../services/openai.md#flat-system-prompt).
+
+Two standard child containers are available for organisation:
 
 - **`chat.system().child('general')`** — for persona, rules, domain, behavior, and other general system prompt components
 - **`chat.system().child('tutorials')`** — populated automatically by `ToolSuite` when tool packages with tutorial content are registered
@@ -88,7 +91,7 @@ chat.assistant("It's 22°C.");
 
 ## Direct chat vs message queue
 
-Messages can be added in two ways — directly on the chat handle or via the message queue. Choose based on your timing and concurrency needs.
+Messages can be added in four ways — `user()`, `assistant()`, `tool()`, and `reasoning()` — either directly on the chat handle or via the message queue. Choose based on your timing and concurrency needs.
 
 ### Direct chat (`chat.xxx()`)
 
