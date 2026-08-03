@@ -56,7 +56,7 @@ children:
 For example, registering a `WeatherPackage` whose `tutorial()` returns
 `"Use greet to say hello and weather to check conditions."` produces:
 
-```
+```text
 tutorials
     Tool Package WeatherPackage
         Applicability
@@ -79,7 +79,7 @@ Every message is automatically timestamped with a `createdAt: Date` set at creat
 
 ## Adding messages
 
-```ts
+```typescript
 chat.system().child('general').prompt('persona').setContent("You are a pirate.");
 chat.user("Hello!");
 
@@ -126,12 +126,12 @@ Hooks use a separate `HookMessageWriter` interface (backed by the same `MessageQ
 
 ## Clearing
 
-`chat.clear()` removes all conversation messages, clears the system prompt
-tree (children are removed, title is reset), and unregisters any message hook
-listeners. The same `PromptContainer` root stays in place — children are
-cleared rather than replaced:
+`chat.clear()` removes all conversation messages, clears historic messages,
+clears the system prompt tree (children are removed, title is reset), and
+unregisters any message hook listeners. The same `PromptContainer` root stays
+in place — children are cleared rather than replaced:
 
-```ts
+```typescript
 chat.system().child('general').prompt('persona').setContent("You are a pirate.");
 chat.user("Hello!");
 chat.clear();
@@ -141,7 +141,7 @@ chat.getSystem(); // null
 
 Pass `retainHooks: true` to preserve message hooks across the reset:
 
-```ts
+```typescript
 const hook = chat.hook().message(ChatRole.User).do(cb);
 chat.clear(true);   // hook survives
 ```
@@ -149,6 +149,35 @@ chat.clear(true);   // hook survives
 If tool packages with tutorials were registered, call `service.resetTutorials()`
 after `chat.clear()` to re-attach and re-populate the `tutorials` child container
 in the fresh system prompt tree. See [ChatService](../services/chat-service.md).
+
+### Clearing messages only
+
+`chat.clearMessages()` removes conversation and historic messages, keeping the
+system prompt and message hook listeners intact:
+
+```typescript
+chat.system().add(new Prompt('Persona', 'You are a pirate.'));
+await chat.user("Hello!");
+await chat.handoff({ apply: () => [] }); // populates historic messages
+chat.clearMessages();
+chat.messages();          // []
+chat.historicMessages();  // []
+chat.getSystem();         // not null (system prompt preserved)
+```
+
+### Silent mode
+
+`chat.silent(true)` suppresses emission of new messages to hook listeners
+without affecting the message history. Call `chat.silent(false)` to re-enable:
+
+```typescript
+chat.silent(true);
+await chat.user("This won't trigger hooks"); // hooks do not fire
+chat.silent(false);
+await chat.user("This will trigger hooks");  // hooks fire normally
+```
+
+Messages are still added to history while silent.
 
 To reset the entire service (chat, stream, tools, and JSON hooks) in one call,
 use `service.clear()` — see [ChatService](../services/chat-service.md).

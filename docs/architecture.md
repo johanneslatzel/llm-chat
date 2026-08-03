@@ -4,7 +4,7 @@
 
 The library is built around **Chats**, **Services**, **Tools**, and **Hooks**.
 
-```
+```text
 ChatService
  ├── Chat (ChatInterface) — message history, hooks
  ├── ChunkStream (ChunkStreamInterface) — raw streaming chunks

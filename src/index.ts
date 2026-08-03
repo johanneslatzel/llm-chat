@@ -18,13 +18,15 @@ export type {
     MessageWriter,
     ToolCall,
     ChatMessage,
-    ChatJSON
+    ChatJSON,
+    HandoffStrategy
 } from './chat/types.js';
 export type { ChunkStreamInterface } from './service/stream-types.js';
 export { ChatRole, ChatMessageOrigin, FinishReason } from './chat/types.js';
 export { ChatHookBuilder, MessageHookBuilder } from './chat/hooks.js';
 export { chatFromJSON } from './chat/chat.js';
 export { Prompt, PromptContainer } from './chat/system-prompt.js';
+export { type TokenEstimator, CharCountEstimator } from './chat/token-estimator.js';
 export { ChatServiceConfiguration, ChatService, StreamEventType } from './service/service.js';
 export type { StreamEvent } from './service/service.js';
 export {

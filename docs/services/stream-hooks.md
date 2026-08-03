@@ -2,7 +2,7 @@
 
 Stream hooks let you observe raw streaming output (content, reasoning, tool-call deltas, finish). They are accessed through `service.stream().hook()`.
 
-```ts
+```typescript
 // content chunks
 service.stream().hook().chunks(ChunkType.Content).do((chunk) => {
     process.stdout.write(chunk.text);
@@ -48,7 +48,7 @@ Use `batch` to distinguish chunks from separate `send()` calls when you accumula
 
 Access accumulated chunks and finish reason after `send()`:
 
-```ts
+```typescript
 await service.send();
 const allChunks = service.stream().chunks();
 const reason = service.stream().finishReason();
@@ -64,7 +64,7 @@ conversation. To fully remove stream hooks, call `service.stream().clear()` or
 
 After each `send()` call, the stream records a `StreamSummary` containing the aggregated output:
 
-```ts
+```typescript
 await service.send();
 const summaries = service.stream().summary();
 // summaries[0].content      — all content text from this send

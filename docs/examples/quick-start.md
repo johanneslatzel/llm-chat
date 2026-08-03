@@ -2,7 +2,7 @@
 
 ## Basic chat
 
-```ts
+```typescript
 import { OpenAIChatService } from "@johannes.latzel/llm-chat";
 
 const service = new OpenAIChatService();
@@ -25,7 +25,7 @@ for (const msg of chat.messages()) {
 
 ## With tools
 
-```ts
+```typescript
 import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus, ChunkType } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool {

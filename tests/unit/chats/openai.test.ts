@@ -805,7 +805,7 @@ describe('OpenAIChatService', () => {
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
 
-            vi.spyOn(service.chatImpl, 'messages').mockReturnValue([
+            vi.spyOn(service.chatImpl as any, '_rawMessages').mockReturnValue([
                 { role: 'bogus_role' as any, content: 'test', createdAt: new Date(), origin: ChatMessageOrigin.User }
             ]);
 
@@ -820,7 +820,7 @@ describe('OpenAIChatService', () => {
             const mock = createMockOpenAI(mockChunks);
             const service = new OpenAIChatService(mock, { model: 'test-model' }, config);
 
-            vi.spyOn(service.chatImpl, 'messages').mockReturnValue([
+            vi.spyOn(service.chatImpl as any, '_rawMessages').mockReturnValue([
                 { role: ChatRole.Developer, content: 'be concise', createdAt: new Date(), origin: ChatMessageOrigin.System }
             ]);
             await (service as any).createStream().next();

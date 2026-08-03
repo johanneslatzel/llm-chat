@@ -2,7 +2,7 @@
 
 Works with any OpenAI-compatible API (OpenAI, LM Studio, etc.). Reasoning messages are stored locally but filtered out when sent to the API.
 
-```ts
+```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
 openAIConfig.model = "some-model";
 openAIConfig.temperature = 0.3;
@@ -36,7 +36,7 @@ await service.send();
 
 Set `OpenAIChatServiceConfiguration.prefixWithTimestamp` to prepend each message's `createdAt` timestamp (local-timezone ISO 8601) to its content when sent to the API:
 
-```ts
+```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
 openAIConfig.prefixWithTimestamp = true;
 // each message is sent as: "2026-06-04T17:04:35.000+01:00: Hello"
@@ -50,7 +50,7 @@ Useful for giving the model temporal context about when each message was created
 
 For o-series models (o1, o3), OpenAI recommends using the `developer` role instead of `system` for better instruction adherence. Set `useDeveloperRole: true` to automatically map the system prompt to the `developer` role:
 
-```ts
+```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
 openAIConfig.useDeveloperRole = true;
 // The system prompt is sent as { role: "developer" } instead of { role: "system" }
@@ -64,7 +64,7 @@ There are no dedicated `developer()` methods on `chat` or `queue`, just as there
 
 Set `ChatServiceConfiguration.systemPrompt` to bypass the prompt tree entirely and send a single flat string:
 
-```ts
+```typescript
 const config = new ChatServiceConfiguration();
 config.systemPrompt = "You are a helpful assistant.";
 
@@ -78,7 +78,7 @@ When set, `chat.getSystem()` and all file-based prompts are ignored. This also c
 
 Control how much reasoning the model performs (o-series models only). Uses the `ReasoningEffort` enum:
 
-```ts
+```typescript
 import { ReasoningEffort } from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();
@@ -120,7 +120,7 @@ not what is received from it.
 
 Control whether the model should call tools. Uses the `ToolChoice` enum:
 
-```ts
+```typescript
 import { ToolChoice } from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();
@@ -138,7 +138,7 @@ openAIConfig.toolChoice = ToolChoice.Required;
 
 Some providers support a verbosity parameter to control response detail:
 
-```ts
+```typescript
 import { Verbosity } from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();

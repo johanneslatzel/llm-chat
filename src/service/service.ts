@@ -4,6 +4,7 @@ import { Mutex } from 'async-mutex';
 import { envInt, envOptionalString, envString } from '../env.js';
 import { Chat } from '../chat/chat.js';
 import { ChatInterface, FinishReason, MessageWriter, ToolCall } from '../chat/types.js';
+import { TokenEstimator, CharCountEstimator } from '../chat/token-estimator.js';
 import { MessageQueue } from '../chat/queue.js';
 import { ChunkStream } from './stream.js';
 import type { ChunkStreamInterface } from './stream-types.js';
@@ -91,6 +92,16 @@ export class ChatServiceConfiguration {
     systemPrompt?: string;
     /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
     trimMessages?: boolean = false;
+    /** Context window size hint in tokens (default: `0` = unlimited). When > 0,
+     *  the value is used by {@link ChatService.isContextWindowExceeded} as the
+     *  threshold for token estimation. This is a hint, not a hard limit —
+     *  the service does not enforce it automatically (env: `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT`). */
+    contextWindowSizeHint: number = (() => {
+        const raw = process.env['LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT'];
+        if (raw === undefined || raw === '') return 0;
+        const n = parseInt(raw, 10);
+        return Number.isNaN(n) ? 0 : Math.max(0, n);
+    })();
 }
 
 /** Base class for LLM service providers. Handles the tool-call loop, prompt file loading, and concurrency. */
@@ -155,7 +166,6 @@ export abstract class ChatService implements JsonHookControls {
     queue(): MessageWriter {
         return this._messageQueue;
     }
-
     /** Set the resend flag so that the next {@link send} retries the request.
      *  This can be useful in custom hook actions that need to re-send after
      *  modifying the chat or queue, without aborting the current stream. */
@@ -195,6 +205,54 @@ export abstract class ChatService implements JsonHookControls {
     /** Access the chunk stream produced by the last {@link send} call. */
     stream(): ChunkStreamInterface {
         return this._chunkStream;
+    }
+
+    /**
+     * Estimate the total token count for the full context that would be sent
+     * to the LLM on the next {@link send}. Includes the composed system prompt,
+     * all conversation messages, queued (not yet drained) messages, and
+     * serialized tool definitions.
+     *
+     * @param estimator - Optional token estimator strategy. Defaults to
+     *                    {@link CharCountEstimator} (chars / 4).
+     */
+    async estimateTokens(estimator?: TokenEstimator): Promise<number> {
+        const est = estimator ?? new CharCountEstimator();
+        let total = 0;
+
+        const systemMessage = this.chatImpl.getSystem();
+        if (systemMessage) {
+            total += est.estimate(systemMessage.content);
+        }
+
+        for (const msg of this.chatImpl._rawMessages()) {
+            total += est.estimate(msg.content);
+        }
+
+        const queued = await this._messageQueue.messages();
+        for (const msg of queued) {
+            total += est.estimate(msg.content);
+        }
+
+        for (const tool of this._tools.getTools()) {
+            total += est.estimate(JSON.stringify(tool));
+        }
+
+        return total;
+    }
+
+    /**
+     * Check whether the estimated context token count exceeds the configured
+     * {@link ChatServiceConfiguration.contextWindowSizeHint context window size hint}.
+     * Returns `false` when the context window size is `0` (unlimited).
+     *
+     * @param estimator - Optional token estimator strategy. Defaults to
+     *                    {@link CharCountEstimator} (chars / 4).
+     */
+    async isContextWindowExceeded(estimator?: TokenEstimator): Promise<boolean> {
+        const limit = this.config.contextWindowSizeHint;
+        if (limit <= 0) return false;
+        return (await this.estimateTokens(estimator)) > limit;
     }
 
     /** Load or reload JSON hook files from the configured hooks directory. */
@@ -286,7 +344,7 @@ export abstract class ChatService implements JsonHookControls {
 
     /** Drain the message queue into chat history. */
     private async _drainQueue(): Promise<void> {
-        const queued = await this._messageQueue.clear();
+        const queued = await this._messageQueue.drain();
         await this.chatImpl.addAll(queued);
     }
 

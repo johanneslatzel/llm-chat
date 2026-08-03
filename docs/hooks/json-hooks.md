@@ -37,13 +37,13 @@ Create a file `hooks/watch-content.json`:
 
 Set the hooks directory and run:
 
-```
+```bash
 LLM_CHAT_HOOKS_DIR=./hooks node your-app.js
 ```
 
 Every content chunk the LLM streams out is now logged to the console:
 
-```
+```text
 [stream] Hello
 [stream]  World
 [stream] !
@@ -381,7 +381,7 @@ displaying active hooks in a UI, or checking that expected hooks are registered.
 
 ## Configuration
 
-```
+```bash
 LLM_CHAT_HOOKS_DIR=./hooks
 ```
 

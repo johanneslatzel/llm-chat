@@ -63,7 +63,13 @@ export class MessageQueue implements MessageWriter, HookMessageWriter {
         });
     }
 
-    async clear(): Promise<ChatMessage[]> {
+    /** Return a shallow copy of queued messages without draining. */
+    async messages(): Promise<ChatMessage[]> {
+        return this._mutex.runExclusive(() => [...this._messages]);
+    }
+
+    /** Drain all queued messages and return them. The queue is emptied atomically. */
+    async drain(): Promise<ChatMessage[]> {
         return this._mutex.runExclusive(() => this._messages.splice(0));
     }
 }

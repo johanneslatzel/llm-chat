@@ -2,7 +2,7 @@
 
 Extend `ChatService` and implement `createStream()`:
 
-```ts
+```typescript
 class AnthropicChatService extends ChatService {
     protected async *createStream(): AsyncIterable<StreamEvent> {
         const response = await fetch("https://api.anthropic.com/v1/messages", {

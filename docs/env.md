@@ -29,6 +29,7 @@ Read at `OpenAIChatService` construction:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `10` | Max tool-call recursion depth |
+| `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window size hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` |
 
 ## Prompts
 

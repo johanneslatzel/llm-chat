@@ -6,7 +6,7 @@ All observation is done through hooks returned by `chat.hook()`.
 
 Subscribe to messages matching a role and/or regex:
 
-```ts
+```typescript
 import { ChatRole } from "@johannes.latzel/llm-chat";
 
 chat.hook()
@@ -30,7 +30,7 @@ chat.hook()
 
 ## Disposal
 
-```ts
+```typescript
 const hook = chat.hook().message(ChatRole.User).do(cb);
 hook.dispose();  // safe to call multiple times
 ```
@@ -41,7 +41,7 @@ hook.dispose();  // safe to call multiple times
 by `.do()` become orphans — calling `.dispose()` on them after `clear()` is a
 harmless no-op. Pass `retainHooks: true` to preserve hooks across the reset:
 
-```ts
+```typescript
 chat.clear();        // hooks unregistered
 chat.clear(true);    // hooks preserved
 ```

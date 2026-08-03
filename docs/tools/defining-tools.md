@@ -1,6 +1,6 @@
 # Defining a tool
 
-```ts
+```typescript
 import { Tool, ToolParameters, ToolParameterProperty, PartialToolResult, ResultStatus } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool {
@@ -33,7 +33,7 @@ class GreetTool extends Tool {
 
 Use `this.validateRequiredParams(args, [...])` in `onExecute` to check required parameters. It throws if a param is missing, and the error boundary handles the rest:
 
-```ts
+```typescript
 protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
     this.validateRequiredParams(args, ["name"]);
     return { result: `Hello, ${args.name}!`, status: ResultStatus.Success };
@@ -44,7 +44,7 @@ protected async onExecute(args: Record<string, unknown>): Promise<PartialToolRes
 
 By default all parameters are `string`. To tell the model the correct type, pass a `PropertyType` as the second argument:
 
-```ts
+```typescript
 import { PropertyType } from "@johannes.latzel/llm-chat";
 
 new ToolParameterProperty("Item count", PropertyType.Integer)
@@ -56,7 +56,7 @@ new ToolParameterProperty("Is enabled", PropertyType.Boolean)
 
 The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases you can use the static factories — they are shorter, self-documenting, and require no `PropertyType` import:
 
-```ts
+```typescript
 ToolParameterProperty.string("A name")
 ToolParameterProperty.number("A numeric value")
 ToolParameterProperty.integer("An integer count")
@@ -74,7 +74,7 @@ ToolParameterProperty.object("A nested object")                              // 
 
 For parameters that are objects with their own sub-properties, use `ToolParameterProperty.object(desc)` which returns an `ObjectPropertyBuilder`:
 
-```ts
+```typescript
 new ToolParameters({
     name: ToolParameterProperty.string("Full name"),
     address: ToolParameterProperty.object("Mailing address")
@@ -88,7 +88,7 @@ new ToolParameters({
 
 Objects can nest arbitrarily deep:
 
-```ts
+```typescript
 ToolParameterProperty.object("Config")
     .addProperty(
         "database",
@@ -106,7 +106,7 @@ The builder only exposes methods valid for objects (`addProperty`, `setRequired`
 
 A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult` — the return type stays `PartialToolResult` regardless of how many results the builder chains.
 
-```ts
+```typescript
 import { ResultBuilder } from "@johannes.latzel/llm-chat";
 
 protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
@@ -130,14 +130,14 @@ protected async onExecute(args: Record<string, unknown>): Promise<PartialToolRes
 
 If you already have an array of results, use `ResultBuilder.from()`:
 
-```ts
+```typescript
 const results = await Promise.all(paths.map(p => readFile(p, "utf-8")));
 return ResultBuilder.from(results).build();
 ```
 
 If you have an array of promises, `ResultBuilder.resolveAll()` combines `Promise.all` + `build()` in one step:
 
-```ts
+```typescript
 return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
 ```
 

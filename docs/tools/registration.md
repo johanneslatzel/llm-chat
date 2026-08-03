@@ -2,7 +2,7 @@
 
 Register tools with the service via `service.tools().add(...)`:
 
-```ts
+```typescript
 import { OpenAIChatService, Tool, ToolParameters, ToolParameterProperty, ResultStatus } from "@johannes.latzel/llm-chat";
 
 // tool definition (see "Defining a tool")
@@ -28,7 +28,7 @@ Duplicates throw: `"A tool with the name 'greet' is already registered."`
 
 Look up a registered tool by name with `service.tools().get(name)`:
 
-```ts
+```typescript
 const tool = service.tools().get("greet");
 if (tool) {
     // tool is the Tool instance

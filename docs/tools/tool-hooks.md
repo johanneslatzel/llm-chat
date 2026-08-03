@@ -4,7 +4,7 @@ The tool suite exposes a `.hook()` method that returns a builder with `.before()
 
 Use `.filter(...names)` to restrict which tools fire the hook:
 
-```ts
+```typescript
 const service = new OpenAIChatService();
 
 // fires for ALL tools

@@ -95,7 +95,7 @@ export class OpenAIChatService extends ChatService {
     }
 
     protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
-        const chatMessages = this.chatImpl.messages();
+        const chatMessages = this.chatImpl._rawMessages();
         const systemMessage = this.config.systemPrompt
             ? ({
                   role: ChatRole.System,

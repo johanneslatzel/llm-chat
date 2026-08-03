@@ -2,7 +2,7 @@
 
 Group related tools into a `ToolPackage` for batch registration:
 
-```ts
+```typescript
 import { ToolPackage, Tool } from "@johannes.latzel/llm-chat";
 
 class GreetTool extends Tool { /* ... */ }
@@ -17,7 +17,7 @@ class WeatherPackage extends ToolPackage {
 
 Register with the same `add()` call used for single tools:
 
-```ts
+```typescript
 service.tools().add(new WeatherPackage());
 ```
 
@@ -25,7 +25,7 @@ service.tools().add(new WeatherPackage());
 
 Override `tutorial()` to return a usage string, or leave it as `null` (default):
 
-```ts
+```typescript
 class WeatherPackage extends ToolPackage {
     constructor() {
         super([new GreetTool(), new WeatherTool()]);
@@ -47,7 +47,7 @@ that has tutorial content. Each package becomes a sub-container titled
 
 The resulting system prompt looks like:
 
-```
+```text
 tutorials
     Tool Package WeatherPackage
         Applicability
@@ -62,7 +62,7 @@ If `tutorial()` returns `null`, no entry is created.
 
 Use the protected `add(tool)` method:
 
-```ts
+```typescript
 class WeatherPackage extends ToolPackage {
     constructor() {
         super();

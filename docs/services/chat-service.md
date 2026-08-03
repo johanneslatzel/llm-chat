@@ -2,7 +2,7 @@
 
 `ChatService` handles the tool-call loop. It owns the chat instance and tool registry. Tools are registered via `service.tools().add(...)`:
 
-```ts
+```typescript
 const config = new ChatServiceConfiguration();
 config.maxToolCallRounds = 25;
 config.systemPromptDir = "./prompts";
@@ -26,6 +26,7 @@ The base class accumulates stream events, assembles tool calls, recurses on tool
 | `hooksDir` | `LLM_CHAT_HOOKS_DIR` | unset | Directory containing `.json` hook definition files |
 | `systemPrompt` | — | unset | Flat string that overrides the system prompt tree entirely |
 | `trimMessages` | — | `false` | Trim leading/trailing whitespace from assistant and reasoning content before storing |
+| `contextWindowSizeHint` | `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` — the service does **not** enforce it automatically |
 
 ## Eager initialisation
 
@@ -33,7 +34,7 @@ By default, prompt files from `systemPromptDir` are loaded lazily on the first
 `send()`. Call `init()` to load them upfront, allowing inspection or display of
 the full system prompt (e.g. a `/system` command):
 
-```ts
+```typescript
 await service.init();
 const system = service.chat().getSystem();
 // system.content now includes all file-based prompts under general
@@ -57,7 +58,7 @@ re-reads the directory and replaces the `general` container contents.
 - Calls `resetTutorials()` — re-attaches the tutorial container to the fresh system prompt tree
 - Resets the internal `_contextLoaded` flag so the next `send()` re-runs `init()` (re-loads prompt files and JSON hooks)
 
-```ts
+```typescript
 service.clear();
 await service.send(); // re-initialises from scratch
 ```
@@ -69,7 +70,7 @@ tutorials in the system prompt tree are cleared along with everything else. To
 re-attach and re-populate them from the still-registered tool packages, call
 `resetTutorials()`:
 
-```ts
+```typescript
 chat.clear();
 service.resetTutorials();
 // chat.getSystem() now includes tutorials again
@@ -79,7 +80,7 @@ service.resetTutorials();
 
 `service.queue()` returns a `MessageWriter` that stages messages for the next `send()` call without blocking the send mutex. This is useful when you need to enqueue messages from a concurrent context (timer, interrupt handler, etc.) without waiting for an in-flight request to finish.
 
-```ts
+```typescript
 await service.queue().user('Timer "build" (30s) has expired.');
 await service.send(); // drains the queue into chat before sending
 ```
@@ -96,7 +97,7 @@ For guidance on choosing between direct chat and the queue, see [Building messag
 
 `service.injectToolCall(toolName, args)` executes a registered tool and queues the result as if the model had called it — without firing tool hooks or waiting for an LLM round-trip.
 
-```ts
+```typescript
 await service.injectToolCall("fetch_weather", { city: "Berlin" });
 service.setNeedsResend(); // flush in next send() iteration
 ```
@@ -104,6 +105,145 @@ service.setNeedsResend(); // flush in next send() iteration
 The tool runs silently (no tool events are emitted), then an assistant message with a synthetic tool call and one or more tool result messages are enqueued into the message queue. `injectToolCall` does **not** call `interrupt()` or `send()` — the caller decides when to flush.
 
 Throws if no tool named `toolName` is registered.
+
+## Context window estimation
+
+The service provides two methods to estimate whether the conversation is
+approaching the model's context window limit. This is useful for proactive
+tokens management — trimming history, summarizing, or warning the user —
+before calling `send()`.
+
+```typescript
+const tokens = await service.estimateTokens();
+const exceeded = await service.isContextWindowExceeded();
+```
+
+### What is counted
+
+`estimateTokens()` estimates the total tokens for the full context that would
+be sent to the LLM on the next `send()`:
+
+1. **System prompt** — the fully composed system prompt tree
+2. **Chat messages** — all conversation messages (`chat.messages()`)
+3. **Queued messages** — messages staged via `service.queue()` that have not yet been drained
+4. **Tool definitions** — all registered tools serialized to their wire format
+
+### Strategy pattern
+
+Both methods accept an optional `TokenEstimator` strategy to customize how
+text is converted to token estimates:
+
+```typescript
+export interface TokenEstimator {
+    estimate(text: string): number;
+}
+```
+
+The default implementation is `CharCountEstimator` (`chars / 4`), which
+provides a rough approximation suitable for many models. Pass a custom
+estimator for model-specific tokenization:
+
+```typescript
+import { CharCountEstimator } from 'llm-chat';
+
+// use a different chars-per-token ratio
+const est = new CharCountEstimator(3);
+await service.estimateTokens(est);
+await service.isContextWindowExceeded(est);
+
+// or implement the interface for a proper tokenizer
+class TiktokenEstimator implements TokenEstimator {
+    estimate(text: string): number {
+        return encoding.encode(text).length;
+    }
+}
+await service.estimateTokens(new TiktokenEstimator());
+```
+
+### Threshold
+
+Configure `contextWindowSizeHint` on `ChatServiceConfiguration` (default `0` =
+unlimited). `isContextWindowExceeded()` returns `false` when the limit is
+`0`. When set to a positive number, it returns `true` if `estimateTokens()`
+exceeds the configured value.
+
+```typescript
+const config = new ChatServiceConfiguration();
+config.contextWindowSizeHint = 128_000; // 128k tokens
+const service = new OpenAIChatService(api, openAIConfig, config);
+
+// later, before send():
+if (await service.isContextWindowExceeded()) {
+    // trim or summarize
+}
+```
+
+## Context window handoff
+
+When the estimated token count exceeds the context window, use `service.handoff()`
+to compact the conversation history. The method uses a strategy pattern — provide
+a `HandoffStrategy` that returns a compacted message list to replace the current
+history.
+
+```typescript
+export interface HandoffStrategy {
+    apply(chat: ChatInterface): ChatMessage[];
+}
+```
+
+The strategy receives the current chat and must return an array of non-system
+messages. Typical strategies include summarising old messages into a single
+synthetic user message or dropping the oldest messages.
+
+```typescript
+// Drop oldest messages, keeping only the last 5
+const strategy: HandoffStrategy = {
+    apply(chat) {
+        const msgs = chat.messages();
+        return msgs.slice(-5).map(m => ({
+            ...m,
+            content: `[compacted] ${m.content}`
+        }));
+    }
+};
+
+await service.handoff(strategy);
+```
+
+### How handoff works
+
+1. The strategy is applied to produce a compacted message list
+2. Current messages are appended to `service.historicMessages()` (read-only snapshot)
+3. The chat is silenced, all messages are cleared, compacted messages are inserted
+4. Emission is re-enabled — hooks do not fire during the swap
+
+### Historic messages
+
+Archived messages accumulate on `service.historicMessages()`:
+
+```typescript
+const archive = service.historicMessages();
+// readonly ChatMessage[]
+```
+
+### Example: summarising handoff
+
+```typescript
+import { ChatRole } from 'llm-chat';
+
+// After detecting isContextWindowExceeded():
+await service.handoff({
+    apply(chat) {
+        const msgs = chat.messages();
+        return [{
+            role: ChatRole.User,
+            content: `[Previous conversation summarised — ${msgs.length} messages archived]`,
+            createdAt: new Date(),
+            origin: 'system' as any
+        }];
+    }
+});
+```
 
 ## Streaming
 
@@ -148,7 +288,7 @@ to `() => void`). Async callbacks are **awaited** before the send loop continues
 ensuring messages queued via `service.injectToolCall()` or `service.queue()` are in
 the queue before `_drainQueue()` runs.
 
-```ts
+```typescript
 service.hook()
     .beforeSend()
     .do(async () => {
@@ -160,7 +300,7 @@ The same applies to `beforeSendLoop`, `afterSend`, and `afterSendLoop`.
 
 ### Examples
 
-```ts
+```typescript
 // inject a message before every request
 const cleanup = service.hook()
     .beforeSend()

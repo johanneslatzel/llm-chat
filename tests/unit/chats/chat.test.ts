@@ -107,12 +107,14 @@ describe('Chat', async () => {
             expect(msgs[1]!.role).toBe(ChatRole.Assistant);
         });
 
-        it('returns a copy (immutability)', async () => {
+        it('returns deep copy (message object mutations are isolated)', async () => {
             const chat = new Chat();
             await chat.user('Hello');
             const msgs = chat.messages();
-            msgs.push({ role: ChatRole.User, content: 'Injected', createdAt: new Date(), origin: ChatMessageOrigin.User });
-            expect(chat.messages()).toHaveLength(1);
+            msgs[0]!.content = 'mutated';
+            msgs[0]!.createdAt.setFullYear(2000);
+            expect(chat.messages()[0]!.content).toBe('Hello');
+            expect(chat.messages()[0]!.createdAt.getFullYear()).not.toBe(2000);
         });
 
         it('returns empty array on fresh chat with no system message', async () => {
@@ -122,13 +124,14 @@ describe('Chat', async () => {
     });
 
     describe('clear', async () => {
-        it('removes all messages including system', async () => {
+        it('removes all messages including system and historic', async () => {
             const chat = new Chat();
             chat.system().add(new Prompt('Title', 'System'));
             await chat.user('Hello');
-            await chat.assistant('World');
+            await chat.handoff({ apply: () => [] });
             chat.clear();
             expect(chat.messages()).toHaveLength(0);
+            expect(chat.historicMessages()).toHaveLength(0);
             expect(chat.getSystem()).toBeNull();
         });
 
@@ -215,16 +218,16 @@ describe('Chat', async () => {
             await chat.user('Hello');
             const json = chat.toJSON();
             const restored = chatFromJSON(json);
-            expect(restored.toJSON().sessionId).toBe(chat.sessionId);
+            expect(restored.toJSON().sessionId).toBe(chat.sessionId());
         });
 
         it('handles empty messages', async () => {
-            const restored = chatFromJSON({ systemPrompt: null, messages: [] });
+            const restored = chatFromJSON({ sessionId: '', systemPrompt: null, messages: [] });
             expect(restored.messages()).toHaveLength(0);
         });
 
         it('returns a ChatInterface', async () => {
-            const restored = chatFromJSON({ systemPrompt: null, messages: [] });
+            const restored = chatFromJSON({ sessionId: '', systemPrompt: null, messages: [] });
             expect(typeof restored.messages).toBe('function');
             expect(typeof restored.toJSON).toBe('function');
             expect(typeof restored.hook).toBe('function');
@@ -235,9 +238,22 @@ describe('Chat', async () => {
         it('generates a unique sessionId for each chat instance', async () => {
             const chat1 = new Chat();
             const chat2 = new Chat();
-            expect(chat1.sessionId).toBeTruthy();
-            expect(chat2.sessionId).toBeTruthy();
-            expect(chat1.sessionId).not.toBe(chat2.sessionId);
+            expect(chat1.sessionId()).toBeTruthy();
+            expect(chat2.sessionId()).toBeTruthy();
+            expect(chat1.sessionId()).not.toBe(chat2.sessionId());
+        });
+
+        it('exposes sessionId via ChatInterface', async () => {
+            const chat: import('../../../src/index.js').ChatInterface = new Chat();
+            expect(chat.sessionId()).toBeTruthy();
+            expect(typeof chat.sessionId()).toBe('string');
+        });
+
+        it('toJSON requires sessionId in ChatJSON', async () => {
+            const chat = new Chat();
+            await chat.user('Hello');
+            const json: import('../../../src/index.js').ChatJSON = chat.toJSON();
+            expect(json.sessionId).toBe(chat.sessionId());
         });
 
         it('toJSON returns systemPrompt and messages', async () => {
@@ -245,7 +261,7 @@ describe('Chat', async () => {
             chat.system().add(new Prompt('System Prompt', 'System'));
             await chat.user('Hello');
             const json = chat.toJSON();
-            expect(json.sessionId).toBe(chat.sessionId);
+            expect(json.sessionId).toBe(chat.sessionId());
             expect(json.systemPrompt).toBeTruthy();
             const prompt: any = json.systemPrompt;
             expect(prompt.type).toBe('container');
@@ -261,12 +277,12 @@ describe('Chat', async () => {
             original.system().add(new Prompt('System Prompt', 'System'));
             const json = original.toJSON();
             const restored = Chat.fromJSON(json);
-            expect(restored.sessionId).toBe(original.sessionId);
+            expect(restored.sessionId()).toBe(original.sessionId());
         });
 
         it('fromJSON generates new sessionId when JSON has none', async () => {
-            const restored = Chat.fromJSON({ systemPrompt: null, messages: [] });
-            expect(restored.sessionId).toBeTruthy();
+            const restored = Chat.fromJSON({ sessionId: '', systemPrompt: null, messages: [] });
+            expect(restored.sessionId()).toBeTruthy();
         });
 
         it('fromJSON restores chat state correctly', async () => {
@@ -281,12 +297,13 @@ describe('Chat', async () => {
         });
 
         it('fromJSON handles empty messages', async () => {
-            const restored = Chat.fromJSON({ systemPrompt: null, messages: [] });
+            const restored = Chat.fromJSON({ sessionId: '', systemPrompt: null, messages: [] });
             expect(restored.messages()).toHaveLength(0);
         });
 
         it('fromJSON without system message works', async () => {
             const json = {
+                sessionId: '',
                 systemPrompt: null,
                 messages: [{ role: ChatRole.User, content: 'Hello', createdAt: new Date().toISOString(), origin: ChatMessageOrigin.User }]
             };
@@ -301,6 +318,62 @@ describe('Chat', async () => {
             const json = chat.toJSON();
             json.messages[0]!.content = 'Modified';
             expect(chat.messages()[0]!.content).toBe('Hello');
+        });
+    });
+
+    describe('silent', async () => {
+        it('suppresses message emission to hooks when silent is true', async () => {
+            const chat = new Chat();
+            const handler = vi.fn();
+            chat.hook().message(ChatRole.User).do((msg) => handler(msg.content));
+            chat.silent(true);
+            await chat.user('hello');
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('resumes message emission after silent(false)', async () => {
+            const chat = new Chat();
+            const handler = vi.fn();
+            chat.hook().message(ChatRole.User).do((msg) => handler(msg.content));
+            chat.silent(true);
+            await chat.user('first');
+            expect(handler).not.toHaveBeenCalled();
+            chat.silent(false);
+            await chat.user('second');
+            expect(handler).toHaveBeenCalledWith('second');
+        });
+
+        it('messages are still added to history when silent', async () => {
+            const chat = new Chat();
+            chat.silent(true);
+            await chat.user('hello');
+            expect(chat.messages()).toHaveLength(1);
+            expect(chat.messages()[0]!.content).toBe('hello');
+        });
+    });
+
+    describe('clearMessages', async () => {
+        it('removes conversation and historic messages, preserving system prompt and hooks', async () => {
+            const chat = new Chat();
+            chat.system().add(new Prompt('Title', 'System prompt'));
+            await chat.user('Hello');
+            await chat.handoff({ apply: () => [] });
+            expect(chat.historicMessages()).toHaveLength(1);
+            const handler = vi.fn();
+            chat.hook().message(ChatRole.User).do((msg) => handler(msg.content));
+            chat.clearMessages();
+            expect(chat.messages()).toHaveLength(0);
+            expect(chat.historicMessages()).toHaveLength(0);
+            expect(chat.getSystem()).not.toBeNull();
+            expect(chat.getSystem()!.content).toContain('System prompt');
+            await chat.user('after');
+            expect(handler).toHaveBeenCalledWith('after');
+        });
+
+        it('works on empty chat', async () => {
+            const chat = new Chat();
+            expect(() => chat.clearMessages()).not.toThrow();
+            expect(chat.messages()).toHaveLength(0);
         });
     });
 
