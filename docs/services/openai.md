@@ -113,7 +113,7 @@ duplicate emission.
 Extracted reasoning is yielded as `StreamEventType.Reasoning` events, which
 feed into `ReasoningChunk` objects in the stream and are accumulated into
 `StreamSummary.reasoning`. The original `ChatRole.Reasoning` message filtering
-(`filterReasoning`) is unaffected — it controls what is **sent** to the API,
+(`filterReasoning`) is unaffected; it controls what is **sent** to the API,
 not what is received from it.
 
 ## Tool choice

@@ -31,16 +31,16 @@ service.stream().hook().chunks().do((chunk) => {
 
 `.chunks()` is always required in the chain. Pass one or more `ChunkType` values to filter, or no arguments to receive every chunk.
 
-Each returns a `Hook` — call `.dispose()` to unsubscribe.
+Each returns a `Hook`; call `.dispose()` to unsubscribe.
 
-Stream hooks are **fire-and-forget** — async callbacks passed to `do()` are not awaited. Use them for observation and side effects (logging, display) that should not block the stream pipeline.
+Stream hooks are **fire-and-forget**: async callbacks passed to `do()` are not awaited. Use them for observation and side effects (logging, display) that should not block the stream pipeline.
 
 ## Chunk identity
 
 Every chunk has two numeric fields:
 
 - **`seq`** — position within the current batch (`0`, `1`, `2`…). Resets to `0` on each `send()`.
-- **`batch`** — which `send()` cycle the chunk belongs to (`0` for the first `send()`, `1` for the second, etc.). Incremented automatically when the stream is cleared.
+- **`batch`** — which `send()` cycle the chunk belongs to (`1` for the first `send()`, `2` for the second, etc.). Incremented automatically when the stream is cleared.
 
 Use `batch` to distinguish chunks from separate `send()` calls when you accumulate them manually.
 
@@ -55,7 +55,7 @@ const reason = service.stream().finishReason();
 ```
 
 The stream state (chunks, seq, batch) is automatically cleared at the start
-of each `send()` call. Chunk listeners are preserved across sends — hooks
+of each `send()` call. Chunk listeners are preserved across sends; hooks
 registered on the stream survive multiple `send()` rounds within the same
 conversation. To fully remove stream hooks, call `service.stream().clear()` or
 `service.clear()`.

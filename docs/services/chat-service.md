@@ -40,8 +40,8 @@ const system = service.chat().getSystem();
 // system.content now includes all file-based prompts under general
 ```
 
-`init()` is idempotent — subsequent calls are no-ops until the next
-`service.clear()` or `chat.clear()` call.
+`init()` is idempotent; subsequent calls are no-ops until the next
+`service.clear()` call.
 
 If you only need to reload prompt files (e.g. after modifying files on disk
 at runtime), call `loadPromptFiles()` directly. Unlike `init()`, it always
@@ -95,14 +95,14 @@ For guidance on choosing between direct chat and the queue, see [Building messag
 
 ## Tool injection
 
-`service.injectToolCall(toolName, args)` executes a registered tool and queues the result as if the model had called it — without firing tool hooks or waiting for an LLM round-trip.
+`service.injectToolCall(toolName, args)` executes a registered tool and queues the result as if the model had called it, without firing tool hooks or waiting for an LLM round-trip.
 
 ```typescript
 await service.injectToolCall("fetch_weather", { city: "Berlin" });
 service.setNeedsResend(); // flush in next send() iteration
 ```
 
-The tool runs silently (no tool events are emitted), then an assistant message with a synthetic tool call and one or more tool result messages are enqueued into the message queue. `injectToolCall` does **not** call `interrupt()` or `send()` — the caller decides when to flush.
+The tool runs silently (no tool events are emitted), then an assistant message with a synthetic tool call and one or more tool result messages are enqueued into the message queue. `injectToolCall` does **not** call `interrupt()` or `send()`; the caller decides when to flush.
 
 Throws if no tool named `toolName` is registered.
 
@@ -110,7 +110,7 @@ Throws if no tool named `toolName` is registered.
 
 The service provides two methods to estimate whether the conversation is
 approaching the model's context window limit. This is useful for proactive
-tokens management — trimming history, summarizing, or warning the user —
+tokens management (trimming history, summarizing, or warning the user)
 before calling `send()`.
 
 ```typescript
@@ -144,7 +144,7 @@ provides a rough approximation suitable for many models. Pass a custom
 estimator for model-specific tokenization:
 
 ```typescript
-import { CharCountEstimator } from 'llm-chat';
+import { CharCountEstimator } from '@johannes.latzel/llm-chat';
 
 // use a different chars-per-token ratio
 const est = new CharCountEstimator(3);
@@ -180,8 +180,8 @@ if (await service.isContextWindowExceeded()) {
 
 ## Context window handoff
 
-When the estimated token count exceeds the context window, use `service.handoff()`
-to compact the conversation history. The method uses a strategy pattern — provide
+When the estimated token count exceeds the context window, use `chat.handoff()`
+to compact the conversation history. The method uses a strategy pattern: provide
 a `HandoffStrategy` that returns a compacted message list to replace the current
 history.
 
@@ -207,32 +207,32 @@ const strategy: HandoffStrategy = {
     }
 };
 
-await service.handoff(strategy);
+await chat.handoff(strategy);
 ```
 
 ### How handoff works
 
 1. The strategy is applied to produce a compacted message list
-2. Current messages are appended to `service.historicMessages()` (read-only snapshot)
+2. Current messages are appended to `chat.historicMessages()` (read-only snapshot)
 3. The chat is silenced, all messages are cleared, compacted messages are inserted
-4. Emission is re-enabled — hooks do not fire during the swap
+4. Emission is re-enabled; hooks do not fire during the swap
 
 ### Historic messages
 
-Archived messages accumulate on `service.historicMessages()`:
+Archived messages accumulate on `chat.historicMessages()`:
 
 ```typescript
-const archive = service.historicMessages();
+const archive = chat.historicMessages();
 // readonly ChatMessage[]
 ```
 
 ### Example: summarising handoff
 
 ```typescript
-import { ChatRole } from 'llm-chat';
+import { ChatRole } from '@johannes.latzel/llm-chat';
 
 // After detecting isContextWindowExceeded():
-await service.handoff({
+await chat.handoff({
     apply(chat) {
         const msgs = chat.messages();
         return [{
@@ -273,7 +273,7 @@ The service drains the message queue at three points during `send()`:
 
 ### Reentrant safety
 
-Calling `service.send()` from inside a service hook never deadlocks — the call
+Calling `service.send()` from inside a service hook never deadlocks; the call
 is detected as reentrant and the outer loop runs another iteration instead.
 
 **Limitation:** reentrant `send()` from `afterSendLoop` is safe (no deadlock),
@@ -282,7 +282,7 @@ Use `afterSend` instead if you need to trigger a retry from a hook.
 
 ### Async support
 
-Service hooks support async callbacks — even though the callback type is `() => void`,
+Service hooks support async callbacks. Even though the callback type is `() => void`,
 TypeScript accepts async functions (a function returning `Promise<void>` is assignable
 to `() => void`). Async callbacks are **awaited** before the send loop continues,
 ensuring messages queued via `service.injectToolCall()` or `service.queue()` are in

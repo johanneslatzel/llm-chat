@@ -72,7 +72,7 @@ class WeatherPackage extends ToolPackage {
 }
 ```
 
-Duplicates throw — a tool name must be unique across all registered tools and packages.
+Duplicates throw; a tool name must be unique across all registered tools and packages.
 
 ### Managing tutorials
 

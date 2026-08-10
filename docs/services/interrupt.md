@@ -23,7 +23,7 @@ await service.send(); // retries automatically
 
 ## How it works
 
-`this._abortController?.abort()` fires immediately — the in-flight stream catches the `AbortError` and stops. No mutex is acquired during `interrupt()`.
+`this._abortController?.abort()` fires immediately; the in-flight stream catches the `AbortError` and stops. No mutex is acquired during `interrupt()`.
 
 When an abort occurs, a FinishChunk with `FinishReason.Aborted` is pushed to the stream so consumers can detect the interruption:
 

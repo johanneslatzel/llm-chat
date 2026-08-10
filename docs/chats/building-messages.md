@@ -10,7 +10,7 @@
 
 The system prompt is built from a tree of components via `chat.system()`, which
 returns the root `PromptContainer`. To bypass the tree entirely and send a
-single flat string, set `ChatServiceConfiguration.systemPrompt` — see
+single flat string, set `ChatServiceConfiguration.systemPrompt`; see
 [Flat system prompt](../services/openai.md#flat-system-prompt).
 
 Two standard child containers are available for organisation:
@@ -91,7 +91,7 @@ chat.assistant("It's 22°C.");
 
 ## Direct chat vs message queue
 
-Messages can be added in four ways — `user()`, `assistant()`, `tool()`, and `reasoning()` — either directly on the chat handle or via the message queue. Choose based on your timing and concurrency needs.
+Messages can be added in four ways: `user()`, `assistant()`, `tool()`, and `reasoning()`, either directly on the chat handle or via the message queue. Choose based on your timing and concurrency needs.
 
 ### Direct chat (`chat.xxx()`)
 
@@ -129,7 +129,7 @@ Hooks use a separate `HookMessageWriter` interface (backed by the same `MessageQ
 `chat.clear()` removes all conversation messages, clears historic messages,
 clears the system prompt tree (children are removed, title is reset), and
 unregisters any message hook listeners. The same `PromptContainer` root stays
-in place — children are cleared rather than replaced:
+in place; children are cleared rather than replaced:
 
 ```typescript
 chat.system().child('general').prompt('persona').setContent("You are a pirate.");
@@ -180,4 +180,4 @@ await chat.user("This will trigger hooks");  // hooks fire normally
 Messages are still added to history while silent.
 
 To reset the entire service (chat, stream, tools, and JSON hooks) in one call,
-use `service.clear()` — see [ChatService](../services/chat-service.md).
+use `service.clear()`; see [ChatService](../services/chat-service.md).

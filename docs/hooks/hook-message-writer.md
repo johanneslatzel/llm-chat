@@ -52,8 +52,8 @@ Every `ChatMessage` carries a required `origin` field:
 
 | File | Role |
 |------|------|
-| `src/chats/chat.ts` | `MessageWriter`, `HookMessageWriter`, `ChatMessageOrigin`, `ChatMessage.origin` |
-| `src/chats/queue.ts` | `MessageQueue` implements both writer interfaces |
+| `src/chat/chat.ts` | `MessageWriter`, `HookMessageWriter`, `ChatMessageOrigin`, `ChatMessage.origin` |
+| `src/chat/queue.ts` | `MessageQueue` implements both writer interfaces |
 | `src/hooks/json-hooks.ts` | `JsonHookControls`, `JsonHookRegistry` accepts hook writer + controls |
-| `src/chats/service.ts` | `ChatService` implements `JsonHookControls`, wires `MessageQueue` to registry |
+| `src/service/service.ts` | `ChatService` implements `JsonHookControls`, wires `MessageQueue` to registry |
 | `src/index.ts` | Public API exports (does NOT re-export hook-internal types) |

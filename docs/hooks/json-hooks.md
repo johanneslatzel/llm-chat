@@ -1,6 +1,6 @@
 # JSON hooks
 
-JSON hooks let you react to LLM events — messages, stream chunks, tool calls —
+JSON hooks let you react to LLM events (messages, stream chunks, tool calls)
 by writing a JSON file instead of TypeScript. You drop a `.json` file into a
 directory, point the service at it, and the hook fires automatically.
 
@@ -56,7 +56,7 @@ Every content chunk the LLM streams out is now logged to the console:
 ### `chat` — react to messages
 
 Fires when a message is added to the chat history. This includes user messages,
-assistant responses, tool results — any message **except** those with
+assistant responses, tool results: any message **except** those with
 `origin: Hook` (see `queue-message` below).
 
 | Filter | Type | Default | Description |
@@ -103,7 +103,7 @@ tokens, so the hook fires multiple times per response.
 }
 ```
 
-This logs only reasoning chunks — the model's internal chain-of-thought —
+This logs only reasoning chunks (the model's internal chain-of-thought)
 without printing the final response or tool call metadata.
 
 ---
@@ -178,7 +178,7 @@ response is discarded.
 { "type": "interrupt" }
 ```
 
-Use this to stop generation when unwanted content is detected — for example, if
+Use this to stop generation when unwanted content is detected, for example if
 the model starts leaking sensitive data:
 
 ```json
@@ -193,7 +193,7 @@ the model starts leaking sensitive data:
 }
 ```
 
-`interrupt` does **not** use `message` — it only aborts.
+`interrupt` does **not** use `message`; it only aborts.
 
 #### `resend: true` — auto-retry
 
@@ -213,7 +213,7 @@ Add `"resend": true` to automatically retry the request after aborting:
 
 When `resend` is true, `send()` loops internally. Each retry sends the same
 chat history again and the LLM generates a fresh response. If the new response
-also triggers the hook, it retries again — `maxTriggers` can cap this.
+also triggers the hook, it retries again; `maxTriggers` can cap this.
 
 ---
 
@@ -224,7 +224,7 @@ in a queue and is drained when `send()` runs. Messages queued this way are
 tagged with `origin: Hook`.
 
 Chat hooks with `target: "chat"` silently skip Hook-origin messages to prevent
-infinite loops — a hook that queues a message won't re-trigger itself when that
+infinite loops: a hook that queues a message won't re-trigger itself when that
 message is drained into chat history.
 
 ```json
@@ -256,7 +256,7 @@ The sequence:
 1. Assistant says "I don't know"
 2. `queue-message` queues a user message asking it to try again
 3. `interrupt` aborts the current response
-4. `resend: true` triggers a retry — the original messages **plus** the
+4. `resend: true` triggers a retry; the original messages **plus** the
    queued user message are sent together
 5. The model generates a new answer with the extra nudge
 
@@ -275,7 +275,7 @@ to the queue and trigger a retry without interrupting the ongoing response.
 { "type": "queue-resend" }
 ```
 
-This action has no extra fields — it only sets the flag. Combine it with
+This action has no extra fields; it only sets the flag. Combine it with
 `queue-message` to queue a message and then trigger a retry:
 
 ```json
@@ -333,7 +333,7 @@ and interrupt in one shot:
 }
 ```
 
-Order matters — `queue-message` runs before `interrupt`, so the message is
+Order matters: `queue-message` runs before `interrupt`, so the message is
 already queued when the abort-and-retry happens.
 
 ---
@@ -359,7 +359,7 @@ A single file can contain one definition (an object) or several (an array):
 ]
 ```
 
-Or split them across files — every `.json` file in the hooks directory is
+Or split them across files; every `.json` file in the hooks directory is
 loaded independently.
 
 ---
@@ -373,7 +373,7 @@ const hooks = service.getJsonHooks();
 // → [{ label: 'log-errors', target: 'chat' }, …]
 ```
 
-Each entry has `label` (always a string — empty if not set in the definition)
+Each entry has `label` (always a string, empty if not set in the definition)
 and `target` (`"chat"`, `"stream"`, or `"tool"`). This is useful for debugging,
 displaying active hooks in a UI, or checking that expected hooks are registered.
 

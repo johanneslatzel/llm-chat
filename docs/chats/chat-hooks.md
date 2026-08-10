@@ -38,7 +38,7 @@ hook.dispose();  // safe to call multiple times
 ## Clearing
 
 `chat.clear()` unregisters all message hooks. Hook objects that were returned
-by `.do()` become orphans — calling `.dispose()` on them after `clear()` is a
+by `.do()` become orphans; calling `.dispose()` on them after `clear()` is a
 harmless no-op. Pass `retainHooks: true` to preserve hooks across the reset:
 
 ```typescript
@@ -48,6 +48,6 @@ chat.clear(true);    // hooks preserved
 
 ## Notes
 
-- Hooks are **not serialized** — re-register after `chatFromJSON()`
+- Hooks are **not serialized**; re-register after `chatFromJSON()`
 - Async handlers in `do()` are awaited before the next message is processed
 - `MessageHook` defaults `maxTriggers` to `Infinity`

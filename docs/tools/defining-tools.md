@@ -54,7 +54,7 @@ new ToolParameterProperty("Is enabled", PropertyType.Boolean)
 
 ### Static factory methods
 
-The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases you can use the static factories — they are shorter, self-documenting, and require no `PropertyType` import:
+The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases you can use the static factories; they are shorter, self-documenting, and require no `PropertyType` import:
 
 ```typescript
 ToolParameterProperty.string("A name")
@@ -104,7 +104,7 @@ The builder only exposes methods valid for objects (`addProperty`, `setRequired`
 
 ### Multiple results
 
-A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult` — the return type stays `PartialToolResult` regardless of how many results the builder chains.
+A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult`; the return type stays `PartialToolResult` regardless of how many results the builder chains.
 
 ```typescript
 import { ResultBuilder } from "@johannes.latzel/llm-chat";
@@ -141,5 +141,5 @@ If you have an array of promises, `ResultBuilder.resolveAll()` combines `Promise
 return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
 ```
 
-The `onExecute` signature stays `Promise<PartialToolResult>` — only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
+The `onExecute` signature stays `Promise<PartialToolResult>`; only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
 
