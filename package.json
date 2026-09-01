@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.7.0",
+    "version": "0.7.1",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,
@@ -44,7 +44,7 @@
     },
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
-        "verify": "npx tsc --noEmit && npx eslint . --max-warnings 0 && vitest run --coverage",
+        "verify": "tsc --noEmit && eslint . --max-warnings 0 && npm run check:lines && vitest run --coverage",
         "lint": "eslint . --max-warnings 0",
         "format": "prettier --write src",
         "test": "vitest",
@@ -53,7 +53,8 @@
         "clean:install": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify",
         "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky",
-        "audit": "npm audit --audit-level=high"
+        "audit": "npm audit --audit-level=high",
+        "check:lines": "check-line-limits"
     },
     "lint-staged": {
         "src/**/*.ts": [
@@ -68,17 +69,18 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@types/node": "^26.1.2",
-        "@typescript-eslint/eslint-plugin": "^8.60.0",
+        "@types/node": "^26.4.0",
+        "@typescript-eslint/eslint-plugin": "^8.68.0",
         "@typescript-eslint/parser": "^8.60.0",
-        "@vitest/coverage-v8": "^4.1.8",
-        "eslint": "^10.8.0",
+        "@vitest/coverage-v8": "^4.1.11",
+        "eslint": "^10.9.1",
         "eslint-config-prettier": "^10.1.2",
         "eslint-plugin-n": "^18.2.2",
         "husky": "^9.1.7",
-        "lint-staged": "^17.3.0",
+        "lint-staged": "^17.4.1",
         "prettier": "^3.5.3",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.8",
+        "@johannes.latzel/check-line-limits": "^1.0.1"
     }
 }

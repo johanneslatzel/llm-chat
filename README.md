@@ -45,14 +45,23 @@ MIT. See [`LICENSE`](LICENSE).
 Issues and PRs welcome at [github.com/johanneslatzel/llm-chat](https://github.com/johanneslatzel/llm-chat).
 
 
+## Integration
+
+| Project | Docs | npm | Description |
+|---------|------|-----|-------------|
+| [llm-chat-mcp](https://github.com/johanneslatzel/llm-chat-mcp) | [docs](https://johanneslatzel.github.io/llm-chat-mcp/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-mcp) | mcp server (stdio/http) serving documents and tools |
+
+
 ## Tools
 
 | Project | Docs | npm | Description |
 |---------|------|-----|-------------|
+| [llm-chat-file](https://github.com/johanneslatzel/llm-chat-file) | [docs](https://johanneslatzel.github.io/llm-chat-file/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-file) | read/write files and folders |
+| [llm-chat-memory](https://github.com/johanneslatzel/llm-chat-memory) | [docs](https://johanneslatzel.github.io/llm-chat-memory/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-memory) | active and passive memory recall |
+| [llm-chat-seq](https://github.com/johanneslatzel/llm-chat-seq) | [docs](https://johanneslatzel.github.io/llm-chat-seq/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-seq) | query [Seq](https://datalust.co/seq) server |
+| [llm-chat-shell](https://github.com/johanneslatzel/llm-chat-shell) | [docs](https://johanneslatzel.github.io/llm-chat-shell/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-shell) | tightly controlled shell tool |
+| [llm-chat-skill](https://github.com/johanneslatzel/llm-chat-skill) | [docs](https://johanneslatzel.github.io/llm-chat-skill/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-skill) | load and manage skills |
+| [llm-chat-task](https://github.com/johanneslatzel/llm-chat-task) | [docs](https://johanneslatzel.github.io/llm-chat-task/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-task) | manage task graph |
 | [llm-chat-time](https://github.com/johanneslatzel/llm-chat-time) | [docs](https://johanneslatzel.github.io/llm-chat-time/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-time) | get datetime, use stopwatch and timers |
 | [llm-chat-web](https://github.com/johanneslatzel/llm-chat-web) | [docs](https://johanneslatzel.github.io/llm-chat-web/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-web) | search and fetch the web |
-| [llm-chat-file](https://github.com/johanneslatzel/llm-chat-file) | [docs](https://johanneslatzel.github.io/llm-chat-file/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-file) | read/write files and folders |
-| [llm-chat-skill](https://github.com/johanneslatzel/llm-chat-skill) | [docs](https://johanneslatzel.github.io/llm-chat-skill/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-skill) | load and manage skills |
-| [llm-chat-memory](https://github.com/johanneslatzel/llm-chat-memory) | [docs](https://johanneslatzel.github.io/llm-chat-memory/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-memory) | active and passive memory recall |
-| [llm-chat-shell](https://github.com/johanneslatzel/llm-chat-shell) | [docs](https://johanneslatzel.github.io/llm-chat-shell/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-shell) | tightly controlled shell tool |
-| [llm-chat-workspace](https://github.com/johanneslatzel/llm-chat-workspace) | [docs](https://johanneslatzel.github.io/llm-chat-workspace/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-workspace) | workspace management |
+| [llm-chat-workspace](https://github.com/johanneslatzel/llm-chat-workspace) | [docs](https://johanneslatzel.github.io/llm-chat-workspace/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-workspace) | base tools for workspace management |
