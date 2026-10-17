@@ -16,23 +16,27 @@ await service.send();
 
 The base class accumulates stream events, assembles tool calls, recurses on tool responses, and errors safely.
 
-### Configuration
+![The send() lifecycle: queue drains, service hooks, the retry loop, and the LLM request to the provider](../assets/llm-chat-send-lifecycle.svg)
+
+## Configuration
 
 | Property | Env var | Default | Description |
 |----------|---------|---------|-------------|
 | `maxToolCallRounds` | `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `10` | Max tool-call recursion depth |
-| `systemPromptDir` | `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory of `.md`/`.txt` system prompt files |
+| `systemPromptDir` | `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory of `.md`/`.txt` system prompt files (read if it exists; never created) |
 | `userPromptPaths` | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
 | `hooksDir` | `LLM_CHAT_HOOKS_DIR` | unset | Directory containing `.json` hook definition files |
-| `systemPrompt` | — | unset | Flat string that overrides the system prompt tree entirely |
+| `systemPrompt` | — | unset | Flat string that overrides the system prompt tree entirely; file-based system prompts are skipped |
 | `trimMessages` | — | `false` | Trim leading/trailing whitespace from assistant and reasoning content before storing |
-| `contextWindowSizeHint` | `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` — the service does **not** enforce it automatically |
+| `contextWindowSizeHint` | `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()`: the service does **not** enforce it automatically |
 
 ## Eager initialisation
 
 By default, prompt files from `systemPromptDir` are loaded lazily on the first
 `send()`. Call `init()` to load them upfront, allowing inspection or display of
-the full system prompt (e.g. a `/system` command):
+the full system prompt (e.g. a `/system` command). When a flat
+`systemPrompt` is set, the system prompt files are skipped; user prompt files
+and JSON hooks still load.
 
 ```typescript
 await service.init();
@@ -43,7 +47,7 @@ const system = service.chat().getSystem();
 `init()` is idempotent; subsequent calls are no-ops until the next
 `service.clear()` call.
 
-If you only need to reload prompt files (e.g. after modifying files on disk
+To reload prompt files only (e.g. after modifying files on disk
 at runtime), call `loadPromptFiles()` directly. Unlike `init()`, it always
 re-reads the directory and replaces the `general` container contents.
 
@@ -51,11 +55,11 @@ re-reads the directory and replaces the `general` container contents.
 
 `service.clear()` resets the entire service to a clean state:
 
-- Calls `JsonHookRegistry.clear()` — disposes all JSON-loaded hooks
-- Calls `ChunkStream.clear()` — removes chunks, resets sequence, unregisters chunk listeners
-- Calls `Chat.clear()` — removes messages, clears system prompt, unregisters message listeners
-- Calls `ToolSuite.clear()` — removes tools and packages, unregisters tool event listeners
-- Calls `resetTutorials()` — re-attaches the tutorial container to the fresh system prompt tree
+- Calls `JsonHookRegistry.clear()`: disposes all JSON-loaded hooks
+- Calls `ChunkStream.clear()`: removes chunks, resets sequence, unregisters chunk listeners
+- Calls `Chat.clear()`: removes messages, clears system prompt, unregisters message listeners
+- Calls `ToolSuite.clear()`: removes tools and packages, unregisters tool event listeners
+- Calls `resetTutorials()`: re-attaches the tutorial container to the fresh system prompt tree
 - Resets the internal `_contextLoaded` flag so the next `send()` re-runs `init()` (re-loads prompt files and JSON hooks)
 
 ```typescript
@@ -78,7 +82,7 @@ service.resetTutorials();
 
 ## Message queue
 
-`service.queue()` returns a `MessageWriter` that stages messages for the next `send()` call without blocking the send mutex. This is useful when you need to enqueue messages from a concurrent context (timer, interrupt handler, etc.) without waiting for an in-flight request to finish.
+`service.queue()` returns a `MessageWriter` that stages messages for the next `send()` call without blocking the send mutex. This is useful for enqueueing messages from a concurrent context (timer, interrupt handler, etc.) without waiting for an in-flight request to finish.
 
 ```typescript
 await service.queue().user('Timer "build" (30s) has expired.');
@@ -91,7 +95,13 @@ Hooks enqueue messages through a separate `HookMessageWriter` interface. Hook-in
 
 The queue uses its own mutex, so enqueuing is fast and independent of the send and chat mutexes.
 
-For guidance on choosing between direct chat and the queue, see [Building messages — Direct chat vs message queue](../chats/building-messages.md#direct-chat-vs-message-queue).
+For guidance on choosing between direct chat and the queue, see [Building messages: Direct chat vs message queue](../chats/building-messages.md#direct-chat-vs-message-queue).
+
+## Tool-call loop
+
+Each provider round is streamed by `sendLoop(iteration)`, with `iteration` starting at `0`. When the model returns tool calls, every tool runs and its results are appended as `tool` messages before the next round, which is a recursive `sendLoop(iteration + 1)` call. Rounds continue until the model stops calling tools, or until `maxToolCallRounds` is reached and the model is asked to summarise its progress.
+
+![The tool-call loop recursing over provider rounds](../assets/llm-chat-tool-call-loop.svg)
 
 ## Tool injection
 
@@ -123,10 +133,10 @@ const exceeded = await service.isContextWindowExceeded();
 `estimateTokens()` estimates the total tokens for the full context that would
 be sent to the LLM on the next `send()`:
 
-1. **System prompt** — the fully composed system prompt tree
-2. **Chat messages** — all conversation messages (`chat.messages()`)
-3. **Queued messages** — messages staged via `service.queue()` that have not yet been drained
-4. **Tool definitions** — all registered tools serialized to their wire format
+1. **System prompt**: the effective system message: the flat `systemPrompt` when set, otherwise the composed prompt tree
+2. **Chat messages**: all conversation messages (`chat.messages()`)
+3. **Queued messages**: messages staged via `service.queue()` that have not yet been drained
+4. **Tool definitions**: all registered tools serialized to their wire format
 
 ### Strategy pattern
 
@@ -237,7 +247,7 @@ await chat.handoff({
         const msgs = chat.messages();
         return [{
             role: ChatRole.User,
-            content: `[Previous conversation summarised — ${msgs.length} messages archived]`,
+            content: `[Previous conversation summarised: ${msgs.length} messages archived]`,
             createdAt: new Date(),
             origin: 'system' as any
         }];
@@ -251,8 +261,10 @@ Stream hooks are documented in [Stream hooks](stream-hooks.md).
 
 ## Service hooks
 
-Service hooks fire around the LLM request lifecycle. They let you inject
-messages or control retry behavior from inside the send loop.
+Service hooks fire around the LLM request lifecycle. They allow injecting
+messages or controlling retry behavior from inside the send loop.
+
+![Service hooks: attached via service.hook(), with beforeSendLoop, beforeSend, afterSend and afterSendLoop events](../assets/llm-chat-hook-service.svg)
 
 ### Hook reference
 
@@ -265,11 +277,12 @@ messages or control retry behavior from inside the send loop.
 
 ### Queue drain sequence
 
-The service drains the message queue at three points during `send()`:
+The service drains the message queue at four points during `send()`:
 
-1. **Before `beforeSendLoop`** — picks up externally queued messages
-2. **After `beforeSend`** — picks up messages injected by the hook for the current iteration (they go into the immediately following `_send()`)
-3. **After `afterSendLoop`** — cleanup before `send()` returns
+1. **Before `beforeSendLoop`**: picks up externally queued messages
+2. **At the start of each iteration, before `beforeSend`**: picks up messages queued during the previous iteration
+3. **After `beforeSend`**: picks up messages injected by the hook for the current iteration (they go into the immediately following `_send()`)
+4. **After `afterSendLoop`**: cleanup before `send()` returns
 
 ### Reentrant safety
 
@@ -278,7 +291,7 @@ is detected as reentrant and the outer loop runs another iteration instead.
 
 **Limitation:** reentrant `send()` from `afterSendLoop` is safe (no deadlock),
 but the extra iteration is lost because the outer loop has already exited.
-Use `afterSend` instead if you need to trigger a retry from a hook.
+Use `afterSend` to trigger a retry from a hook.
 
 ### Async support
 

@@ -2,6 +2,8 @@
 
 The tool suite exposes a `.hook()` method that returns a builder with `.before()`, `.after()`, and `.error()` methods.
 
+![Tool hooks: attached via service.tools().hook(), with before, after and error events](../assets/llm-chat-hook-tool.svg)
+
 Use `.filter(...names)` to restrict which tools fire the hook:
 
 ```typescript

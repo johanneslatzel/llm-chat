@@ -2,80 +2,51 @@
 
 `ChatInterface` serves three purposes:
 
-1. **Prepare** — build the message history the agent will see (system prompt, user messages, seeded assistant/tool messages)
-2. **Record** — after `service.send()`, read back what the agent produced via `chat.messages()`
-3. **React** — observe the stream in real time via hooks
+1. **Prepare**: build the message history the agent will see (system prompt, user messages, seeded assistant/tool messages)
+2. **Record**: after `service.send()`, read back what the agent produced via `chat.messages()`
+3. **React**: observe the stream in real time via hooks
 
 ## System prompt
 
 The system prompt is built from a tree of components via `chat.system()`, which
 returns the root `PromptContainer`. To bypass the tree entirely and send a
-single flat string, set `ChatServiceConfiguration.systemPrompt`; see
+single flat string, set `ChatServiceConfiguration.systemPrompt`; `chat.getSystem()`
+then returns that string while `chat.system()` still exposes the tree. See
 [Flat system prompt](../services/openai.md#flat-system-prompt).
+
+![System prompt tree: chat.system() with general and tutorials containers, the general prompts, and numbered tool packages](../assets/llm-chat-system-prompt-tree.svg)
 
 Two standard child containers are available for organisation:
 
-- **`chat.system().child('general')`** — for persona, rules, domain, behavior, and other general system prompt components
-- **`chat.system().child('tutorials')`** — populated automatically by `ToolSuite` when tool packages with tutorial content are registered
+- **`chat.system().child('general')`**: for persona, rules, domain, behavior, and other general system prompt components
+- **`chat.system().child('tutorials')`**: populated automatically by `ToolSuite` when tool packages with tutorial content are registered
 
 General prompt files can be loaded automatically from a directory via
 `ChatServiceConfiguration.systemPromptDir` (env: `LLM_CHAT_SYSTEM_PROMPT_DIR`).
 All `.md` and `.txt` files in the directory are loaded as components under
 `general`, with the filename (without extension) as the prompt ID.
-Files with any other extension are ignored.
+Files with any other extension are ignored. The directory is read only if it
+exists; it is never created and no default files are written.
 
-When the directory is first accessed (on the first `send()`), a set of
-default empty files is created. You can add your own `.md` or `.txt`
-files and they will be loaded as additional `general > <filename>` components.
+The system prompt is stored separately from the regular message list:
 
-The default categories are derived from real-world system prompts
-collected at
-[https://github.com/dontriskit/awesome-ai-system-prompts](https://github.com/dontriskit/awesome-ai-system-prompts).
+- **`chat.messages()`**: returns only user, assistant, tool, and reasoning messages. The system message is **not** included.
+- **`chat.getSystem()`**: returns the effective system message: an override installed by the service (a flat `systemPrompt`) when configured, otherwise the composed prompt tree. `null` when neither yields content.
 
-| File               | Prompt ID              | Purpose |
-|--------------------|------------------------|---------|
-| `persona.md`       | `general > persona`    | Role & identity — who the AI is, who created it, its purpose |
-| `rules.md`         | `general > rules`      | General instructions & constraints — behavioral rules, meta-instructions, dos/donts |
-| `behavior.md`      | `general > behavior`   | Tone & interaction style — how to communicate, adapt to the user |
-| `domain.md`        | `general > domain`     | Domain-specific knowledge — tech stack, libraries, conventions |
-| `environment.md`   | `general > environment`| System context — OS, platform, IDE, sandbox, capabilities |
-| `safety.md`        | `general > safety`     | Refusal protocols & alignment — what to refuse, how to refuse |
-| `reasoning.md`     | `general > reasoning`  | Planning & thinking — step-by-step reasoning, agent loops |
-| `capabilities.md`  | `general > capabilities`| Task definitions — what the AI excels at, broad task categories |
+When `service.send()` sends messages to the provider, the system prompt is always the first element.
+
+Every message is automatically timestamped with a `createdAt: Date` set at creation time and tagged with an `origin` field (`ChatMessageOrigin`) indicating whether it came from the user, the model, a tool, a hook, or the system prompt.
 
 ## Tutorial container
 
 The `tutorials` child container is populated automatically by `ToolSuite`.
 When a `ToolPackage` with a non-null `tutorial()` return value is registered,
-the suite creates a sub-container titled `Tool Package <ClassName>` with two
-children:
-
-- **Applicability** — comma-separated list of tool names in the package
-- **Tutorial** — the value returned by `tutorial()`
-
-For example, registering a `WeatherPackage` whose `tutorial()` returns
-`"Use greet to say hello and weather to check conditions."` produces:
-
-```text
-tutorials
-    Tool Package WeatherPackage
-        Applicability
-            greet, weather
-        Tutorial
-            Use greet to say hello and weather to check conditions.
-```
-
-This is injected into the system prompt tree under `chat.system().child('tutorials')`,
-so it appears in every conversation alongside the general prompts.
-
-The system prompt is stored separately from the regular message list:
-
-- **`chat.messages()`** — returns only user, assistant, tool, and reasoning messages. The system message is **not** included.
-- **`chat.getSystem()`** — returns the system message, or `null` if none has been set.
-
-When `service.send()` sends messages to the provider, the system prompt is always the first element.
-
-Every message is automatically timestamped with a `createdAt: Date` set at creation time and tagged with an `origin` field (`ChatMessageOrigin`) indicating whether it came from the user, the model, a tool, a hook, or the system prompt.
+the suite creates a sub-container titled `Tool Package <ClassName>` with an
+`Applicability` child (the comma-separated tool names) and a `Tutorial` child
+(the value returned by `tutorial()`). The resulting tree is injected under
+`chat.system().child('tutorials')`, so it appears in every conversation
+alongside the general prompts. See [Tool packages](../tools/packages.md#tutorial)
+for the full example.
 
 ## Adding messages
 
@@ -91,25 +62,27 @@ chat.assistant("It's 22°C.");
 
 ## Direct chat vs message queue
 
-Messages can be added in four ways: `user()`, `assistant()`, `tool()`, and `reasoning()`, either directly on the chat handle or via the message queue. Choose based on your timing and concurrency needs.
+Messages can be added in four ways: `user()`, `assistant()`, `tool()`, and `reasoning()`, either directly on the chat handle or via the message queue. Choose based on timing and concurrency needs.
+
+![Direct chat methods append immediately, while the queue and JSON hooks stage messages until the next send()](../assets/llm-chat-message-flow.svg)
 
 ### Direct chat (`chat.xxx()`)
 
-Use `chat.user()`, `chat.assistant()`, `chat.tool()` when you want to:
+Use `chat.user()`, `chat.assistant()`, `chat.tool()` to:
 
-- **Build history before sending** — prepare the conversation that will be sent to the LLM on the next `service.send()`.
-- **Record model output** — after `service.send()` returns, the service uses direct chat internally to record assistant responses and tool results.
-- **Fire message hooks immediately** — appending triggers any registered message hooks in real time.
+- **Build history before sending**: prepare the conversation that will be sent to the LLM on the next `service.send()`.
+- **Record model output**: after `service.send()` returns, the service uses direct chat internally to record assistant responses and tool results.
+- **Fire message hooks immediately**: appending triggers any registered message hooks in real time.
 
 Messages are appended immediately under the chat's own mutex.
 
 ### Message queue (`service.queue().xxx()`)
 
-Use `service.queue().user()`, `service.queue().tool()` when you need to:
+Use `service.queue().user()`, `service.queue().tool()` to:
 
-- **Enqueue from concurrent contexts** — timers, interrupt handlers, or any code that runs while an in-flight `send()` is executing. The queue has its own mutex and won't block the send.
-- **Stage messages without triggering hooks** — queued messages sit in a buffer. No hooks fire during enqueue.
-- **Inject from JSON hooks** — hook definitions with the `queue-message` action write to the same queue, tagged with `origin: Hook`.
+- **Enqueue from concurrent contexts**: timers, interrupt handlers, or any code that runs while an in-flight `send()` is executing. The queue has its own mutex and does not block the send.
+- **Stage messages without triggering hooks**: queued messages sit in a buffer. No hooks fire during enqueue.
+- **Inject from JSON hooks**: hook definitions with the `queue-message` action write to the same queue, tagged with `origin: Hook`.
 
 Messages are drained into the chat at the start of the next `service.send()` call. At that point they fire message hooks like any other added message. See [ChatService message queue](../services/chat-service.md#message-queue) for details.
 
@@ -119,8 +92,8 @@ Hooks use a separate `HookMessageWriter` interface (backed by the same `MessageQ
 
 ### Quick reference
 
-| Use this | When you need ... |
-|----------|-------------------|
+| Use this | When to use |
+|----------|-------------|
 | `chat.user()` / `chat.assistant()` / `chat.tool()` | Immediate appending, hook firing, building history before `send()` |
 | `service.queue().user()` / `service.queue().tool()` | Concurrent staging, deferred processing, hook injection |
 

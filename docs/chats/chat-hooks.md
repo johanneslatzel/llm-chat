@@ -2,6 +2,8 @@
 
 All observation is done through hooks returned by `chat.hook()`.
 
+![Chat hooks: attached via service.chat().hook().message(), filtered by roles and regex](../assets/llm-chat-hook-chat.svg)
+
 ## Message hooks
 
 Subscribe to messages matching a role and/or regex:

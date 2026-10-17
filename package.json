@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.7.1",
+    "version": "0.8.0",
     "description": "LLM conversation package focused on LM Studio local models",
     "license": "MIT",
     "sideEffects": false,
@@ -44,7 +44,7 @@
     },
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
-        "verify": "tsc --noEmit && eslint . --max-warnings 0 && npm run check:lines && vitest run --coverage",
+        "verify": "tsc --noEmit && eslint . --max-warnings 0 && npm run check:lines && npm run check:mkdocs && vitest run --coverage",
         "lint": "eslint . --max-warnings 0",
         "format": "prettier --write src",
         "test": "vitest",
@@ -54,7 +54,8 @@
         "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky",
         "audit": "npm audit --audit-level=high",
-        "check:lines": "check-line-limits"
+        "check:lines": "check-line-limits",
+        "check:mkdocs": "check-mkdocs"
     },
     "lint-staged": {
         "src/**/*.ts": [
@@ -72,7 +73,7 @@
         "@types/node": "^26.4.0",
         "@typescript-eslint/eslint-plugin": "^8.68.0",
         "@typescript-eslint/parser": "^8.60.0",
-        "@vitest/coverage-v8": "^4.1.11",
+        "@vitest/coverage-v8": "^5.0.0",
         "eslint": "^10.9.1",
         "eslint-config-prettier": "^10.1.2",
         "eslint-plugin-n": "^18.2.2",
@@ -80,7 +81,8 @@
         "lint-staged": "^17.4.1",
         "prettier": "^3.5.3",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.8",
-        "@johannes.latzel/check-line-limits": "^1.0.1"
+        "vitest": "^5.0.0",
+        "@johannes.latzel/check-line-limits": "^1.0.1",
+        "@johannes.latzel/check-mkdocs": "^0.1.0"
     }
 }

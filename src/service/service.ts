@@ -1,13 +1,21 @@
-import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
 import { envInt, envOptionalString, envString } from '../env.js';
 import { Chat } from '../chat/chat.js';
-import { ChatInterface, FinishReason, MessageWriter, ToolCall } from '../chat/types.js';
+import {
+    ChatInterface,
+    ChatMessageOrigin,
+    ChatRole,
+    FinishReason,
+    MessageWriter,
+    ToolCall
+} from '../chat/types.js';
 import { TokenEstimator, CharCountEstimator } from '../chat/token-estimator.js';
 import { MessageQueue } from '../chat/queue.js';
 import { ChunkStream } from './stream.js';
-import type { ChunkStreamInterface } from './stream-types.js';
+import type { ChunkStreamInterface, CompletionUsage } from './stream-types.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 import { JsonHookRegistry, type JsonHookInfo, type JsonHookControls } from '../hooks/json-hooks.js';
 import { ServiceEvent, ServiceHookBuilder } from './service-hooks.js';
@@ -16,6 +24,7 @@ import { ServiceEvent, ServiceHookBuilder } from './service-hooks.js';
 export enum StreamEventType {
     Content = 'content',
     ToolCallDelta = 'tool_call_delta',
+    Usage = 'usage',
     Finish = 'finish',
     Reasoning = 'reasoning'
 }
@@ -30,40 +39,14 @@ export type StreamEvent =
           name?: string;
           arguments?: string;
       }
+    | { type: StreamEventType.Usage; usage: CompletionUsage }
     | { type: StreamEventType.Finish; reason: FinishReason }
     | { type: StreamEventType.Reasoning; text: string };
-
-/**
- * Default prompt IDs created as empty `.md` files when the system prompt
- * directory is first initialised.
- *
- * These categories are derived from real-world system prompts collected at
- * https://github.com/dontriskit/awesome-ai-system-prompts
- */
-export enum SystemPromptId {
-    /** Role & identity — who the AI is, who created it, its purpose. */
-    Persona = 'persona',
-    /** General instructions & constraints — behavioral rules, meta-instructions, dos/donts. */
-    Rules = 'rules',
-    /** Tone & interaction style — how to communicate, adapt to the user. */
-    Behavior = 'behavior',
-    /** Domain-specific knowledge — tech stack, libraries, conventions, best practices. */
-    Domain = 'domain',
-    /** System context — OS, platform, IDE, sandbox, capabilities. */
-    Environment = 'environment',
-    /** Refusal protocols & alignment — what to refuse, how to refuse, content policies. */
-    Safety = 'safety',
-    /** Planning & thinking — step-by-step reasoning, agent loops, planning phases. */
-    Reasoning = 'reasoning',
-    /** Task definitions — what the AI excels at, broad task categories. */
-    Capabilities = 'capabilities'
-}
-
 /** Configuration for a {@link ChatService}. All fields can be set via environment variables. */
 export class ChatServiceConfiguration {
     /** Maximum number of tool-call rounds before the loop is interrupted (env: `LLM_CHAT_MAX_TOOL_CALL_ROUNDS`, default: 10). */
     maxToolCallRounds: number = envInt('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 10);
-    /** Directory containing system prompt files (*.md, *.txt). Each file is loaded as a component under the `general` container, with the filename (without extension) as the prompt ID (env: `LLM_CHAT_SYSTEM_PROMPT_DIR`). Priority: env var > config value > fallback to `./prompts/`. */
+    /** Directory containing system prompt files (*.md, *.txt). Each file is loaded as a component under the `general` container, with the filename (without extension) as the prompt ID (env: `LLM_CHAT_SYSTEM_PROMPT_DIR`). Priority: env var > config value > fallback to `./prompts/`. The directory is only read if it exists; it is never created and no default files are written. */
     private _systemPromptDir?: string;
 
     get systemPromptDir(): string {
@@ -80,7 +63,7 @@ export class ChatServiceConfiguration {
         .filter(Boolean);
     private _hooksDir: string | undefined = undefined;
 
-    /** Directory containing `.json` hook definition files. Priority: config value > env var (`LLM_CHAT_HOOKS_DIR`) > `undefined` (no hooks loaded). */
+    /** Directory containing `.json` hook definition files. Priority: env var (`LLM_CHAT_HOOKS_DIR`) > config value > `undefined` (no hooks loaded). */
     get hooksDir(): string | undefined {
         return envOptionalString('LLM_CHAT_HOOKS_DIR') ?? this._hooksDir;
     }
@@ -88,7 +71,7 @@ export class ChatServiceConfiguration {
     set hooksDir(value: string | undefined) {
         this._hooksDir = value;
     }
-    /** When set, this flat string overrides the system prompt tree. The tree is bypassed entirely — `chat.getSystem()` returns `null`, and this string is sent directly as the system (or developer) message. */
+    /** When set, this flat string overrides the system prompt tree. File-based system prompts are not loaded while it is set, and the string is sent directly as the system (or developer) message instead of `chat.getSystem()`. */
     systemPrompt?: string;
     /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
     trimMessages?: boolean = false;
@@ -96,12 +79,7 @@ export class ChatServiceConfiguration {
      *  the value is used by {@link ChatService.isContextWindowExceeded} as the
      *  threshold for token estimation. This is a hint, not a hard limit —
      *  the service does not enforce it automatically (env: `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT`). */
-    contextWindowSizeHint: number = (() => {
-        const raw = process.env['LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT'];
-        if (raw === undefined || raw === '') return 0;
-        const n = parseInt(raw, 10);
-        return Number.isNaN(n) ? 0 : Math.max(0, n);
-    })();
+    contextWindowSizeHint: number = envInt('LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT', 0, 0);
 }
 
 /** Base class for LLM service providers. Handles the tool-call loop, prompt file loading, and concurrency. */
@@ -125,6 +103,16 @@ export abstract class ChatService implements JsonHookControls {
         protected config: ChatServiceConfiguration = new ChatServiceConfiguration()
     ) {
         this._tools.setTutorialContainer(this.chatImpl.system().child('tutorials'));
+        this.chatImpl.setSystemResolver(() =>
+            this.config.systemPrompt
+                ? {
+                      role: ChatRole.System,
+                      content: this.config.systemPrompt,
+                      createdAt: new Date(),
+                      origin: ChatMessageOrigin.System
+                  }
+                : undefined
+        );
     }
 
     /** Access the tool registry to register tools before calling {@link send}. */
@@ -357,36 +345,32 @@ export abstract class ChatService implements JsonHookControls {
         this._needsResend = !!needsResend;
     }
 
-    /** Load or reload prompt files from `config.systemPromptDir` into the
-     *  `general` container. Safe to call multiple times — clears the existing
-     *  `general` container before re-reading. Also loads user prompt files
-     *  configured in `config.userPromptPaths`. */
-    async loadPromptFiles(): Promise<void> {
+    /** Load or reload the system prompt files from `config.systemPromptDir`
+     *  into the `general` container. Safe to call multiple times: clears the
+     *  existing `general` container before re-reading. */
+    private async loadSystemPromptFiles(): Promise<void> {
         this.chatImpl.system().child('general').clear();
-        if (this.config.systemPromptDir) {
-            const absDir = path.resolve(process.cwd(), this.config.systemPromptDir);
-            await mkdir(absDir, { recursive: true });
-
-            const defaults = Object.values(SystemPromptId);
-            for (const id of defaults) {
-                const filePath = path.join(absDir, `${id}.md`);
-                try {
-                    await access(filePath);
-                } catch {
-                    await writeFile(filePath, '', 'utf-8');
-                }
-            }
-
-            const entries = await readdir(absDir, { withFileTypes: true });
-            const files = entries
-                .filter((e) => e.isFile() && /\.(md|txt)$/i.test(e.name))
-                .sort((a, b) => a.name.localeCompare(b.name));
-            for (const file of files) {
-                const content = await readFile(path.join(absDir, file.name), 'utf-8');
-                const name = path.basename(file.name, path.extname(file.name));
-                this.chatImpl.system().child('general').prompt(name).setContent(content);
-            }
+        const dir = this.config.systemPromptDir;
+        if (!dir) return;
+        const absDir = path.resolve(process.cwd(), dir);
+        let entries: Dirent[];
+        try {
+            entries = await readdir(absDir, { withFileTypes: true });
+        } catch {
+            return;
         }
+        const files = entries
+            .filter((e) => e.isFile() && /\.(md|txt)$/i.test(e.name))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        for (const file of files) {
+            const content = await readFile(path.join(absDir, file.name), 'utf-8');
+            const name = path.basename(file.name, path.extname(file.name));
+            this.chatImpl.system().child('general').prompt(name).setContent(content);
+        }
+    }
+
+    /** Load user prompt files configured in `config.userPromptPaths` as user messages. */
+    private async loadUserPromptFiles(): Promise<void> {
         for (const relPath of this.config.userPromptPaths) {
             const absPath = path.resolve(process.cwd(), relPath);
             try {
@@ -398,14 +382,28 @@ export abstract class ChatService implements JsonHookControls {
         }
     }
 
+    /** Load or reload prompt files from `config.systemPromptDir` into the
+     *  `general` container, and load user prompt files configured in
+     *  `config.userPromptPaths`. Safe to call multiple times: clears and
+     *  re-reads the `general` container. */
+    async loadPromptFiles(): Promise<void> {
+        await this.loadSystemPromptFiles();
+        await this.loadUserPromptFiles();
+    }
+
     /** Eagerly load prompt files and mark the context as loaded.
-     *  Idempotent — subsequent calls are no-ops. Call this before the first
+     *  Idempotent: subsequent calls are no-ops. Call this before the first
      *  {@link send} to resolve the full system prompt upfront, allowing
-     *  callers to inspect or display it (e.g. a `/system` command). */
+     *  callers to inspect or display it (e.g. a `/system` command). When a flat
+     *  {@link ChatServiceConfiguration.systemPrompt} is configured, file-based
+     *  system prompts are skipped. */
     async init(): Promise<void> {
         if (this._contextLoaded) return;
         this._contextLoaded = true;
-        await this.loadPromptFiles();
+        if (!this.config.systemPrompt) {
+            await this.loadSystemPromptFiles();
+        }
+        await this.loadUserPromptFiles();
         await this.loadJsonHooks();
     }
 
@@ -420,6 +418,7 @@ export abstract class ChatService implements JsonHookControls {
     private async sendLoop(iteration: number): Promise<void> {
         let content = '';
         let reasoningContent = '';
+        let usage: CompletionUsage | undefined;
         const toolCallAccumulators = new Map<
             number,
             {
@@ -451,6 +450,11 @@ export abstract class ChatService implements JsonHookControls {
                         );
                         break;
 
+                    case StreamEventType.Usage:
+                        usage = event.usage;
+                        this._chunkStream.addUsageChunk(event.usage);
+                        break;
+
                     case StreamEventType.Finish:
                         this._chunkStream.addFinishChunk(event.reason);
                         await this.handleFinish(
@@ -458,7 +462,8 @@ export abstract class ChatService implements JsonHookControls {
                             reasoningContent,
                             toolCallAccumulators,
                             event.reason,
-                            iteration
+                            iteration,
+                            usage
                         );
                         return;
 
@@ -476,6 +481,7 @@ export abstract class ChatService implements JsonHookControls {
                     reasoning: reasoningContent,
                     toolCallCount: toolCallAccumulators.size,
                     finishReason: FinishReason.Aborted,
+                    ...(usage ? { usage } : {}),
                     timestamp: new Date()
                 });
                 return;
@@ -493,7 +499,8 @@ export abstract class ChatService implements JsonHookControls {
                 reasoningContent,
                 toolCallAccumulators,
                 reason,
-                iteration
+                iteration,
+                usage
             );
         } else {
             this._chunkStream.addSummary({
@@ -501,6 +508,7 @@ export abstract class ChatService implements JsonHookControls {
                 reasoning: '',
                 toolCallCount: 0,
                 finishReason: FinishReason.Stop,
+                ...(usage ? { usage } : {}),
                 timestamp: new Date()
             });
         }
@@ -525,7 +533,8 @@ export abstract class ChatService implements JsonHookControls {
         reasoningContent: string,
         toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }>,
         reason: FinishReason,
-        iteration: number
+        iteration: number,
+        usage?: CompletionUsage
     ): Promise<void> {
         // Ordering guarantee: FinishChunk was already pushed to _chunkStream before this call.
         // Stream hooks fired. Now append completed messages to chat.
@@ -535,6 +544,7 @@ export abstract class ChatService implements JsonHookControls {
             reasoning: reasoningContent,
             toolCallCount: toolCallAccumulators.size,
             finishReason: reason,
+            ...(usage ? { usage } : {}),
             timestamp: new Date()
         });
 

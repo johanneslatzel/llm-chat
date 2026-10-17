@@ -1,6 +1,8 @@
 # Stream hooks
 
-Stream hooks let you observe raw streaming output (content, reasoning, tool-call deltas, finish). They are accessed through `service.stream().hook()`.
+Stream hooks observe raw streaming output (content, reasoning, tool-call deltas, usage, finish). They are accessed through `service.stream().hook()`.
+
+![Stream hooks: attached via service.stream().hook().chunks(), for content, reasoning, tool_call_delta, usage and finish](../assets/llm-chat-hook-stream.svg)
 
 ```typescript
 // content chunks
@@ -16,6 +18,11 @@ service.stream().hook().chunks(ChunkType.Reasoning).do((chunk) => {
 // tool call delta chunks
 service.stream().hook().chunks(ChunkType.ToolCallDelta).do((chunk) => {
     console.log(`Tool ${chunk.toolCallId}: ${chunk.text}`);
+});
+
+// usage chunk (emitted before the finish chunk when usage is requested)
+service.stream().hook().chunks(ChunkType.Usage).do((chunk) => {
+    console.log(`Tokens: ${chunk.usage.total_tokens}`);
 });
 
 // finish event
@@ -39,10 +46,10 @@ Stream hooks are **fire-and-forget**: async callbacks passed to `do()` are not a
 
 Every chunk has two numeric fields:
 
-- **`seq`** — position within the current batch (`0`, `1`, `2`…). Resets to `0` on each `send()`.
-- **`batch`** — which `send()` cycle the chunk belongs to (`1` for the first `send()`, `2` for the second, etc.). Incremented automatically when the stream is cleared.
+- **`seq`**: position within the current batch (`0`, `1`, `2`...). Resets to `0` on each `send()`.
+- **`batch`**: which `send()` cycle the chunk belongs to (`1` for the first `send()`, `2` for the second, etc.). Incremented automatically when the stream is cleared.
 
-Use `batch` to distinguish chunks from separate `send()` calls when you accumulate them manually.
+Use `batch` to distinguish chunks from separate `send()` calls when accumulating them manually.
 
 ## Stream state
 
@@ -62,16 +69,24 @@ conversation. To fully remove stream hooks, call `service.stream().clear()` or
 
 ## Summaries
 
-After each `send()` call, the stream records a `StreamSummary` containing the aggregated output:
+Each provider round records a `StreamSummary` containing that round's aggregated
+output. A `send()` that triggers tool calls produces one summary per round:
 
 ```typescript
+service.stream().clearSummaries();
 await service.send();
+
 const summaries = service.stream().summary();
-// summaries[0].content      — all content text from this send
-// summaries[0].reasoning    — all reasoning text from this send
-// summaries[0].toolCallCount — number of tool calls invoked
-// summaries[0].finishReason  — why the stream finished
-// summaries[0].timestamp    — when the summary was created
+// Each entry:
+//   .content: content text from that round
+//   .reasoning: reasoning text from that round
+//   .toolCallCount: number of tool calls invoked in that round
+//   .finishReason: why the round finished
+//   .usage: token usage, when the provider reports it
+//   .timestamp: when the summary was created
+
+const lastRound = summaries.at(-1);                                                      // most recent round
+const totalTokens = summaries.reduce((sum, s) => sum + (s.usage?.total_tokens ?? 0), 0); // all rounds
 ```
 
 Summaries accumulate across multiple `send()` calls. Call `service.stream().clearSummaries()` to reset them without affecting chunks or hooks.

@@ -1,8 +1,10 @@
 # JSON hooks
 
-JSON hooks let you react to LLM events (messages, stream chunks, tool calls)
-by writing a JSON file instead of TypeScript. You drop a `.json` file into a
-directory, point the service at it, and the hook fires automatically.
+JSON hooks react to LLM events (messages, stream chunks, tool calls)
+by writing a JSON file instead of TypeScript. A `.json` file dropped into a
+directory, with the service pointed at it, fires the hook automatically.
+
+![JSON hooks: declared in config.hooksDir, targeting chat, stream or tool](../assets/llm-chat-hook-json.svg)
 
 ---
 
@@ -10,10 +12,13 @@ directory, point the service at it, and the hook fires automatically.
 
 A hook definition has three parts:
 
-1. **`target`** — what to listen to (`"chat"`, `"stream"`, or `"tool"`)
-2. **Filters** — optional fields to narrow when the hook fires (e.g. `roles`,
+1. **`target`**: what to listen to (`"chat"`, `"stream"`, or `"tool"`)
+2. **Filters**: optional fields to narrow when the hook fires (e.g. `roles`,
    `regex`, `chunks`)
-3. **`actions`** — what to do when it fires (log, interrupt, queue a message, …)
+3. **`actions`**: what to do when it fires (log, interrupt, queue a message, …)
+
+A definition may also set `label` (used in logs and template variables) and
+`enabled`; `enabled: false` skips registration, and it defaults to `true`.
 
 When the hook fires, each action in the `actions` array runs in order. If an
 action produces output (like `log` or `queue-message`), it can use `{{variable}}`
@@ -38,7 +43,7 @@ Create a file `hooks/watch-content.json`:
 Set the hooks directory and run:
 
 ```bash
-LLM_CHAT_HOOKS_DIR=./hooks node your-app.js
+LLM_CHAT_HOOKS_DIR=./hooks node app.js
 ```
 
 Every content chunk the LLM streams out is now logged to the console:
@@ -53,7 +58,7 @@ Every content chunk the LLM streams out is now logged to the console:
 
 ## Targets
 
-### `chat` — react to messages
+### `chat`: react to messages
 
 Fires when a message is added to the chat history. This includes user messages,
 assistant responses, tool results: any message **except** those with
@@ -78,19 +83,19 @@ assistant responses, tool results: any message **except** those with
 ```
 
 When the assistant says something matching "error" or "warning", the hook logs
-it to `console.warn`. The `regex` filter lets you target specific content
+it to `console.warn`. The `regex` filter targets specific content
 patterns; without it the hook fires on **every** message of those roles.
 
 ---
 
-### `stream` — react to stream chunks
+### `stream`: react to stream chunks
 
 Fires during LLM streaming, once per chunk. Chunks arrive as the model generates
 tokens, so the hook fires multiple times per response.
 
 | Filter | Type | Default | Description |
 |--------|------|---------|-------------|
-| `chunks` | `string[]` | all chunk types | Filter by chunk type (`"content"`, `"reasoning"`, `"tool_call_delta"`, `"finish"`) |
+| `chunks` | `string[]` | all chunk types | Filter by chunk type (`"content"`, `"reasoning"`, `"tool_call_delta"`, `"usage"`, `"finish"`) |
 
 ```json
 {
@@ -108,9 +113,9 @@ without printing the final response or tool call metadata.
 
 ---
 
-### `tool` — react to tool execution
+### `tool`: react to tool execution
 
-Fires when a tool runs. You can listen before execution, after execution, or on
+Fires when a tool runs. A hook can listen before execution, after execution, or on
 error.
 
 | Filter | Type | Default | Description |
@@ -164,8 +169,8 @@ Print a message to the console at the matching log level.
 |-------|----------|---------|-------------|
 | `message` | no | `[json-hook] target: {…}` | Template with `{{variable}}` placeholders |
 
-If you omit `message`, a default JSON dump is used so you can see what data is
-available while prototyping.
+If `message` is omitted, a default JSON dump shows the available data while
+prototyping.
 
 ---
 
@@ -195,7 +200,7 @@ the model starts leaking sensitive data:
 
 `interrupt` does **not** use `message`; it only aborts.
 
-#### `resend: true` — auto-retry
+#### `resend: true`: auto-retry
 
 Add `"resend": true` to automatically retry the request after aborting:
 
@@ -213,7 +218,8 @@ Add `"resend": true` to automatically retry the request after aborting:
 
 When `resend` is true, `send()` loops internally. Each retry sends the same
 chat history again and the LLM generates a fresh response. If the new response
-also triggers the hook, it retries again; `maxTriggers` can cap this.
+also triggers the hook, it retries again; `maxTriggers` caps this for chat-target
+hooks.
 
 ---
 
@@ -260,16 +266,16 @@ The sequence:
    queued user message are sent together
 5. The model generates a new answer with the extra nudge
 
-**Tool role note:** When `role` is `"tool"`, an auto-generated ID is created
-(`inject-<timestamp>`). This lets you supply synthetic tool results.
+When `role` is `"tool"`, an auto-generated ID is created
+(`inject-<timestamp>`). This allows supplying synthetic tool results.
 
 ---
 
 ### `queue-resend`
 
 Set the resend flag without aborting the current request. The `send()` loop
-retries once the current stream finishes. Useful when you want to add messages
-to the queue and trigger a retry without interrupting the ongoing response.
+retries once the current stream finishes. Useful for adding messages to the
+queue and triggering a retry without interrupting the ongoing response.
 
 ```json
 { "type": "queue-resend" }
@@ -304,9 +310,10 @@ variables are available depends on the target:
 | Target | Variables |
 |--------|-----------|
 | chat | `{{label}}`, `{{target}}`, `{{role}}`, `{{content}}`, `{{match}}` (regex capture) |
-| stream — content/reasoning | `{{label}}`, `{{target}}`, `{{type}}`, `{{text}}` |
-| stream — tool_call_delta | `{{label}}`, `{{target}}`, `{{type}}`, `{{text}}`, `{{toolCallId}}` |
-| stream — finish | `{{label}}`, `{{target}}`, `{{type}}`, `{{finishReason}}` |
+| stream: content/reasoning | `{{label}}`, `{{target}}`, `{{type}}`, `{{text}}` |
+| stream: tool_call_delta | `{{label}}`, `{{target}}`, `{{type}}`, `{{text}}`, `{{toolCallId}}` |
+| stream: finish | `{{label}}`, `{{target}}`, `{{type}}`, `{{finishReason}}` |
+| stream: usage | `{{label}}`, `{{target}}`, `{{type}}` |
 | tool | `{{label}}`, `{{target}}`, `{{event}}`, `{{name}}`, `{{args}}`, `{{result}}`, `{{error}}` |
 
 If a variable is missing from the event data it is left as-is in the output
@@ -316,8 +323,8 @@ If a variable is missing from the event data it is left as-is in the output
 
 ## Combining actions
 
-The `actions` array runs actions in order. This lets you log, queue a message,
-and interrupt in one shot:
+The `actions` array runs actions in order. This allows logging, queueing a
+message, and interrupting in one shot:
 
 ```json
 {
@@ -389,4 +396,4 @@ LLM_CHAT_HOOKS_DIR=./hooks
 config.hooksDir = './my-hooks';
 ```
 
-Priority: config value > env var > unset (no hooks loaded).
+Priority: env var > config value > unset (no hooks loaded).

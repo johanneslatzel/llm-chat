@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ChatRole, ChatServiceConfiguration, FinishReason } from '../../../src/index.js';
+import { ChatRole, ChatServiceConfiguration, FinishReason, type CompletionUsage } from '../../../src/index.js';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { TestChatService, SimpleTestTool } from '../../helper/service-mocks.js';
@@ -391,6 +391,91 @@ describe('ChatService', () => {
             const messages = service.chatImpl.messages();
             const last = messages[messages.length - 1]!;
             expect(last.content).toBe('\n  Hello World \n');
+        });
+    });
+
+    describe('token usage', () => {
+        const usage: CompletionUsage = {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15
+        };
+
+        it('records usage from a Usage event in the summary', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Answer' },
+                { type: StreamEventType.Usage, usage },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            expect(service.stream().summary()).toHaveLength(1);
+            expect(service.stream().summary()[0]!.usage).toEqual(usage);
+        });
+
+        it('emits a UsageChunk before the FinishChunk', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Answer' },
+                { type: StreamEventType.Usage, usage },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            const types = service.stream().chunks().map((c) => c.type);
+            expect(types).toEqual([ChunkType.Content, ChunkType.Usage, ChunkType.Finish]);
+        });
+
+        it('records usage when the stream ends without an explicit finish', async () => {
+            const events: StreamEvent[] = [
+                { type: StreamEventType.Content, text: 'Partial' },
+                { type: StreamEventType.Usage, usage },
+            ];
+            const service = new TestChatService(events);
+            await service.send();
+            expect(service.stream().summary()[0]!.usage).toEqual(usage);
+        });
+
+        it('records usage when the stream has no content', async () => {
+            const events: StreamEvent[] = [{ type: StreamEventType.Usage, usage }];
+            const service = new TestChatService(events);
+            await service.send();
+            expect(service.stream().summary()[0]!.usage).toEqual(usage);
+            expect(service.chatImpl.messages()).toHaveLength(0);
+        });
+
+        it('records per-round usage across tool-call recursion', async () => {
+            const first: CompletionUsage = {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2
+            };
+            const second: CompletionUsage = {
+                prompt_tokens: 3,
+                completion_tokens: 4,
+                total_tokens: 7
+            };
+            const events: StreamEvent[] = [
+                {
+                    type: StreamEventType.ToolCallDelta,
+                    index: 0,
+                    id: 'call_1',
+                    name: 'test_tool',
+                    arguments: '{}',
+                },
+                { type: StreamEventType.Usage, usage: first },
+                { type: StreamEventType.Finish, reason: FinishReason.ToolCalls },
+                { type: StreamEventType.Content, text: 'Done' },
+                { type: StreamEventType.Usage, usage: second },
+                { type: StreamEventType.Finish, reason: FinishReason.Stop },
+            ];
+            const service = new TestChatService(events);
+            service.tools().add(new SimpleTestTool('test_tool', 'ok'));
+            await service.chatImpl.user('Do it');
+            await service.send();
+            const summaries = service.stream().summary();
+            expect(summaries).toHaveLength(2);
+            expect(summaries[0]!.usage).toEqual(first);
+            expect(summaries[1]!.usage).toEqual(second);
         });
     });
 });

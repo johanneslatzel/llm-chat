@@ -13,9 +13,26 @@ export interface MockChunk {
         function?: { name?: string; arguments?: string };
     }>;
     finish_reason?: 'stop' | 'tool_calls' | 'length' | null;
+    usage?: ChatCompletionChunk['usage'];
+    usageOnly?: boolean;
 }
 
 export function createChunk(delta: MockChunk): ChatCompletionChunk {
+    const base = {
+        id: `chatcmpl-${Math.random().toString(36).slice(2, 10)}`,
+        object: 'chat.completion.chunk' as const,
+        created: Math.floor(Date.now() / 1000),
+        model: 'test-model'
+    };
+
+    if (delta.usageOnly) {
+        return {
+            ...base,
+            choices: [],
+            usage: delta.usage ?? null
+        } as ChatCompletionChunk;
+    }
+
     const choice: ChatCompletionChunk.Choice = {
         index: 0,
         delta: {
@@ -39,12 +56,9 @@ export function createChunk(delta: MockChunk): ChatCompletionChunk {
         finish_reason: delta.finish_reason ?? null
     };
     return {
-        id: `chatcmpl-${Math.random().toString(36).slice(2, 10)}`,
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: 'test-model',
+        ...base,
         choices: [choice],
-        usage: null
+        usage: delta.usage ?? null
     } as ChatCompletionChunk;
 }
 

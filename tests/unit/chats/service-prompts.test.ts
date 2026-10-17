@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ChatRole, ChatServiceConfiguration, FinishReason } from '../../../src/index.js';
-import { SystemPromptId } from '../../../src/service/service.js';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { createTempDir, removeTempDir, createTempFile } from '../../index.js';
@@ -93,10 +92,30 @@ describe('ChatService prompts and lifecycle', () => {
             }
         });
 
-        it('creates the directory and default prompt files when missing', async () => {
+        it('loads multiple system prompt files in name order', async () => {
             const tmpDir = createTempDir();
             try {
+                createTempFile(tmpDir, 'b.txt', 'Second');
+                createTempFile(tmpDir, 'a.txt', 'First');
                 config.systemPromptDir = tmpDir;
+
+                const service = new TestChatService([], config);
+                await service.init();
+
+                const content = service.chatImpl.getSystem()!.content;
+                expect(content).toContain('First');
+                expect(content).toContain('Second');
+                expect(content.indexOf('First')).toBeLessThan(content.indexOf('Second'));
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('does not create the directory when it is missing', async () => {
+            const tmpDir = createTempDir();
+            try {
+                const missingDir = path.join(tmpDir, 'missing-prompts');
+                config.systemPromptDir = missingDir;
 
                 const events: StreamEvent[] = [
                     { type: StreamEventType.Content, text: 'Answer' },
@@ -106,12 +125,72 @@ describe('ChatService prompts and lifecycle', () => {
                 const service = new TestChatService(events, config);
                 await service.send();
 
-                const defaults = Object.values(SystemPromptId);
-                for (const id of defaults) {
-                    const filePath = path.join(tmpDir, `${id}.md`);
-                    expect(existsSync(filePath)).toBe(true);
-                    expect(readFileSync(filePath, 'utf-8')).toBe('');
-                }
+                expect(existsSync(missingDir)).toBe(false);
+                expect(service.chatImpl.getSystem()).toBeNull();
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+    });
+
+    describe('flat system prompt', () => {
+        it('does not load or create prompt files when systemPrompt is set', async () => {
+            const tmpDir = createTempDir();
+            try {
+                const missingDir = path.join(tmpDir, 'flat-prompts');
+                config.systemPrompt = 'You are a flat assistant.';
+                config.systemPromptDir = missingDir;
+
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Answer' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+
+                const service = new TestChatService(events, config);
+                await service.send();
+
+                expect(existsSync(missingDir)).toBe(false);
+                expect(service.chatImpl.getSystem()).not.toBeNull();
+                expect(service.chatImpl.getSystem()!.content).toBe('You are a flat assistant.');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('still loads user prompt files when systemPrompt is set', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'user.txt', 'User prompt');
+                config.systemPrompt = 'You are a flat assistant.';
+                config.userPromptPaths = [path.join(tmpDir, 'user.txt')];
+
+                const events: StreamEvent[] = [
+                    { type: StreamEventType.Content, text: 'Answer' },
+                    { type: StreamEventType.Finish, reason: FinishReason.Stop },
+                ];
+
+                const service = new TestChatService(events, config);
+                await service.send();
+
+                const userMessages = service.chatImpl.messages().filter((m) => m.role === 'user');
+                expect(userMessages).toHaveLength(1);
+                expect(userMessages[0]!.content).toBe('User prompt');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('treats an empty systemPrompt as unset', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'sys.txt', 'Boot prompt');
+                config.systemPrompt = '';
+                config.systemPromptDir = tmpDir;
+
+                const service = new TestChatService([], config);
+                await service.init();
+
+                expect(service.chatImpl.getSystem()!.content).toContain('Boot prompt');
             } finally {
                 removeTempDir(tmpDir);
             }
@@ -203,7 +282,7 @@ describe('ChatService prompts and lifecycle', () => {
             }
         });
 
-        it('prevents loadPromptFiles from running again on first send', async () => {
+        it('prevents system prompt files from loading again on first send', async () => {
             const tmpDir = createTempDir();
             try {
                 createTempFile(tmpDir, 'boot.txt', 'Boot prompt');
@@ -215,7 +294,7 @@ describe('ChatService prompts and lifecycle', () => {
                 ];
 
                 const service = new TestChatService(events, config);
-                const spy = vi.spyOn(service, 'loadPromptFiles');
+                const spy = vi.spyOn(service as any, 'loadSystemPromptFiles');
                 await service.init();
                 expect(spy).toHaveBeenCalledTimes(1);
 

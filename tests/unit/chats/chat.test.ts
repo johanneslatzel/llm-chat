@@ -32,6 +32,56 @@ describe('Chat', async () => {
             expect(messages[0]!.role).toBe(ChatRole.User);
             expect(messages[1]!.role).toBe(ChatRole.Assistant);
         });
+
+        it('uses an installed system resolver instead of the tree', () => {
+            const chat = new Chat();
+            chat.system().add(new Prompt('Title', 'Tree content.'));
+            chat.setSystemResolver(() => ({
+                role: ChatRole.System,
+                content: 'Resolved override.',
+                createdAt: new Date(),
+                origin: ChatMessageOrigin.System
+            }));
+            expect(chat.getSystem()!.content).toBe('Resolved override.');
+        });
+
+        it('falls back to the tree when the resolver returns undefined', () => {
+            const chat = new Chat();
+            chat.system().add(new Prompt('Title', 'Tree content.'));
+            chat.setSystemResolver(() => undefined);
+            expect(chat.getSystem()!.content).toContain('Tree content.');
+        });
+
+        it('returns null when the resolver returns undefined and the tree is empty', () => {
+            const chat = new Chat();
+            chat.setSystemResolver(() => undefined);
+            expect(chat.getSystem()).toBeNull();
+        });
+
+        it('keeps the resolver after clear()', () => {
+            const chat = new Chat();
+            chat.setSystemResolver(() => ({
+                role: ChatRole.System,
+                content: 'Resolved override.',
+                createdAt: new Date(),
+                origin: ChatMessageOrigin.System
+            }));
+            chat.clear();
+            expect(chat.getSystem()!.content).toBe('Resolved override.');
+        });
+
+        it('restores tree-only behavior when the resolver is removed', () => {
+            const chat = new Chat();
+            chat.system().add(new Prompt('Title', 'Tree content.'));
+            chat.setSystemResolver(() => ({
+                role: ChatRole.System,
+                content: 'Resolved override.',
+                createdAt: new Date(),
+                origin: ChatMessageOrigin.System
+            }));
+            chat.setSystemResolver(null);
+            expect(chat.getSystem()!.content).toContain('Tree content.');
+        });
     });
 
     describe('adding messages', async () => {

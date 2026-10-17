@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { envInt, envFloat, envString, envOptionalString } from '../../src/env.js';
+import { envInt, envFloat, envString, envOptionalString, envBool } from '../../src/env.js';
 
 describe('envInt', () => {
     it('returns the parsed integer when env var is set', () => {
@@ -103,6 +103,48 @@ describe('envOptionalString', () => {
     it('returns undefined when env var is whitespace-only', () => {
         vi.stubEnv('TEST_OPT', '   ');
         expect(envOptionalString('TEST_OPT')).toBeUndefined();
+        vi.unstubAllEnvs();
+    });
+});
+
+describe('envBool', () => {
+    it('returns true for "true"', () => {
+        vi.stubEnv('TEST_BOOL', 'true');
+        expect(envBool('TEST_BOOL', false)).toBe(true);
+        vi.unstubAllEnvs();
+    });
+
+    it('returns true for "1"', () => {
+        vi.stubEnv('TEST_BOOL', '1');
+        expect(envBool('TEST_BOOL', false)).toBe(true);
+        vi.unstubAllEnvs();
+    });
+
+    it('returns false for "false"', () => {
+        vi.stubEnv('TEST_BOOL', 'false');
+        expect(envBool('TEST_BOOL', true)).toBe(false);
+        vi.unstubAllEnvs();
+    });
+
+    it('returns false for "0"', () => {
+        vi.stubEnv('TEST_BOOL', '0');
+        expect(envBool('TEST_BOOL', true)).toBe(false);
+        vi.unstubAllEnvs();
+    });
+
+    it('returns the fallback when the env var is unset', () => {
+        expect(envBool('MISSING_BOOL', true)).toBe(true);
+    });
+
+    it('returns the fallback when the env var is empty', () => {
+        vi.stubEnv('TEST_BOOL', '');
+        expect(envBool('TEST_BOOL', true)).toBe(true);
+        vi.unstubAllEnvs();
+    });
+
+    it('returns the fallback for an unrecognised value', () => {
+        vi.stubEnv('TEST_BOOL', 'maybe');
+        expect(envBool('TEST_BOOL', false)).toBe(false);
         vi.unstubAllEnvs();
     });
 });

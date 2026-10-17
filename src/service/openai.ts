@@ -3,9 +3,10 @@ import type {
     ChatCompletionMessageParam,
     ChatCompletionCreateParamsStreaming
 } from 'openai/resources/chat/completions';
-import { ChatMessage, ChatMessageOrigin, ChatRole, FinishReason } from '../chat/types.js';
+import { ChatMessage, ChatRole, FinishReason } from '../chat/types.js';
 import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } from './service.js';
 import { OpenAIChatServiceConfiguration } from './config.js';
+import type { CompletionUsage } from './stream-types.js';
 
 function toFinishReason(raw: string | null | undefined): FinishReason | null {
     switch (raw) {
@@ -96,14 +97,7 @@ export class OpenAIChatService extends ChatService {
 
     protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
         const chatMessages = this.chatImpl._rawMessages();
-        const systemMessage = this.config.systemPrompt
-            ? ({
-                  role: ChatRole.System,
-                  content: this.config.systemPrompt,
-                  createdAt: new Date(),
-                  origin: ChatMessageOrigin.System
-              } as ChatMessage)
-            : this.chatImpl.getSystem();
+        const systemMessage = this.chatImpl.getSystem();
         const allMessages = systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
         const messages = toOpenAIMessages(
             allMessages,
@@ -137,13 +131,25 @@ export class OpenAIChatService extends ChatService {
                 ...(this.openAIConfig?.verbosity !== undefined
                     ? { verbosity: this.openAIConfig.verbosity }
                     : {}),
+                ...(this.openAIConfig?.includeUsage
+                    ? { stream_options: { include_usage: true } }
+                    : {}),
                 stream: true
             } as ChatCompletionCreateParamsStreaming,
             { signal }
         );
 
+        let finishReason: FinishReason | null = null;
+        let usage: CompletionUsage | undefined;
+
         for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta;
+            if (chunk.usage) usage = chunk.usage;
+
+            const choice = chunk.choices[0];
+            const reason = toFinishReason(choice?.finish_reason);
+            if (reason !== null) finishReason = reason;
+
+            const delta = choice?.delta;
             if (!delta) continue;
 
             if (delta.content) {
@@ -196,11 +202,14 @@ export class OpenAIChatService extends ChatService {
                     } as StreamEvent;
                 }
             }
+        }
 
-            const reason = toFinishReason(chunk.choices[0]?.finish_reason);
-            if (reason !== null) {
-                yield { type: StreamEventType.Finish, reason };
-            }
+        if (usage) {
+            yield { type: StreamEventType.Usage, usage };
+        }
+
+        if (finishReason !== null) {
+            yield { type: StreamEventType.Finish, reason: finishReason };
         }
     }
 }

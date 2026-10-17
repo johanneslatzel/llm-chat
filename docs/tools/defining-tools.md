@@ -25,11 +25,11 @@ class GreetTool extends Tool {
 }
 ```
 
-### Safety net
+## Safety net
 
-`Tool.execute()` wraps `onExecute()` in a try-catch. If your tool throws, the error is caught and returned as the result with `status: 'error'`. The original thrown value is also preserved on `ToolResult.error` for error hooks to inspect. This means you can safely throw from any tool without crashing the tool-call loop, and the `service.tools().hook().error().do(...)` hook receives the original `Error` object (stack trace, custom properties, etc.).
+`Tool.execute()` wraps `onExecute()` in a try-catch. If a tool throws, the error is caught and returned as the result with `status: 'error'`. The original thrown value is also preserved on `ToolResult.error` for error hooks to inspect. This means a tool can safely throw without crashing the tool-call loop, and the `service.tools().hook().error().do(...)` hook receives the original `Error` object (stack trace, custom properties, etc.).
 
-### Parameter validation
+## Parameter validation
 
 Use `this.validateRequiredParams(args, [...])` in `onExecute` to check required parameters. It throws if a param is missing, and the error boundary handles the rest:
 
@@ -40,7 +40,7 @@ protected async onExecute(args: Record<string, unknown>): Promise<PartialToolRes
 }
 ```
 
-### Typed parameters
+## Typed parameters
 
 By default all parameters are `string`. To tell the model the correct type, pass a `PropertyType` as the second argument:
 
@@ -52,9 +52,9 @@ new ToolParameterProperty("Tags", PropertyType.Array)
 new ToolParameterProperty("Is enabled", PropertyType.Boolean)
 ```
 
-### Static factory methods
+## Static factory methods
 
-The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases you can use the static factories; they are shorter, self-documenting, and require no `PropertyType` import:
+The raw `new ToolParameterProperty(...)` constructor works with any type, but for common cases the static factories are shorter, self-documenting, and require no `PropertyType` import:
 
 ```typescript
 ToolParameterProperty.string("A name")
@@ -70,7 +70,7 @@ ToolParameterProperty.array("A list of addresses", ToolParameterProperty.object(
 ToolParameterProperty.object("A nested object")                              // returns a builder (see below)
 ```
 
-### Nested object parameters
+## Nested object parameters
 
 For parameters that are objects with their own sub-properties, use `ToolParameterProperty.object(desc)` which returns an `ObjectPropertyBuilder`:
 
@@ -102,7 +102,7 @@ ToolParameterProperty.object("Config")
 
 The builder only exposes methods valid for objects (`addProperty`, `setRequired`, `build`).
 
-### Multiple results
+## Multiple results
 
 A tool can return several independent results in a single call by chaining them with `ResultBuilder`. The LLM sees each node as a separate tool response, each with its own status. Results are linked via a `next` pointer on `PartialToolResult`; the return type stays `PartialToolResult` regardless of how many results the builder chains.
 
@@ -126,20 +126,19 @@ protected async onExecute(args: Record<string, unknown>): Promise<PartialToolRes
 }
 ```
 
-#### Convenience: `from()` and `resolveAll()`
+### Convenience: `from()` and `resolveAll()`
 
-If you already have an array of results, use `ResultBuilder.from()`:
+Given an array of results, use `ResultBuilder.from()`:
 
 ```typescript
 const results = await Promise.all(paths.map(p => readFile(p, "utf-8")));
 return ResultBuilder.from(results).build();
 ```
 
-If you have an array of promises, `ResultBuilder.resolveAll()` combines `Promise.all` + `build()` in one step:
+Given an array of promises, `ResultBuilder.resolveAll()` combines `Promise.all` + `build()` in one step:
 
 ```typescript
 return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
 ```
 
 The `onExecute` signature stays `Promise<PartialToolResult>`; only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
-

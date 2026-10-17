@@ -31,6 +31,7 @@ await service.send();
 | `reasoningEffort` | `ReasoningEffort` | `LLM_CHAT_OPENAI_REASONING_EFFORT` | Reasoning effort for o-series models |
 | `toolChoice` | `ToolChoice` | `LLM_CHAT_OPENAI_TOOL_CHOICE` | Control whether the model calls tools |
 | `verbosity` | `Verbosity` | `LLM_CHAT_OPENAI_VERBOSITY` | Verbosity level (passed through to providers that support it) |
+| `includeUsage` | `boolean` | `LLM_CHAT_OPENAI_INCLUDE_USAGE` | Request streamed token usage via `stream_options.include_usage` (default: `false`) |
 
 ## Timestamp prefix
 
@@ -58,7 +59,7 @@ openAIConfig.useDeveloperRole = true;
 const service = new OpenAIChatService(api, openAIConfig);
 ```
 
-There are no dedicated `developer()` methods on `chat` or `queue`, just as there are no `system()` methods. The system prompt is automatically converted when `useDeveloperRole` is enabled.
+There are no dedicated `developer()` or `system()` message methods on `chat` or `queue`; the system prompt tree is accessed via `chat.system()`, and it is automatically converted to the `developer` role when `useDeveloperRole` is enabled.
 
 ## Flat system prompt
 
@@ -72,7 +73,43 @@ const service = new OpenAIChatService(api, openAIConfig, config);
 // sends: { role: "system", content: "You are a helpful assistant." }
 ```
 
-When set, `chat.getSystem()` and all file-based prompts are ignored. This also composes with `useDeveloperRole`:
+While set, file-based system prompts are not loaded, `chat.getSystem()` returns the flat string, and it is sent instead of the prompt tree. This also composes with `useDeveloperRole`:
+
+## Token usage
+
+Streamed token usage is opt-in because some OpenAI-compatible servers reject the
+`stream_options` parameter. Enable it to send
+`stream_options: { include_usage: true }` and receive the final usage-only chunk:
+
+```typescript
+const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.includeUsage = true;
+openAIConfig.model = "some-model";
+
+const service = new OpenAIChatService(api, openAIConfig, config);
+
+// One StreamSummary is recorded per provider round, and summaries accumulate
+// across send() calls. Clear them to isolate the next request.
+service.stream().clearSummaries();
+
+await service.send();
+
+const summaries = service.stream().summary();
+// Most recent round:
+const lastUsage = summaries.at(-1)?.usage;
+// Total across all rounds of this request:
+const totalTokens = summaries.reduce((sum, s) => sum + (s.usage?.total_tokens ?? 0), 0);
+// lastUsage?.prompt_tokens
+// lastUsage?.completion_tokens
+// lastUsage?.prompt_tokens_details?.cached_tokens
+// lastUsage?.completion_tokens_details?.reasoning_tokens
+```
+
+`OpenAIChatService` emits a `StreamEventType.Usage` event before the final
+`StreamEventType.Finish` event of each provider round, and records that round's
+usage on its `StreamSummary`. The same value also arrives as a `ChunkType.Usage`
+chunk before the `ChunkType.Finish` chunk. A summary's `usage` is `undefined`
+when the server did not send usage.
 
 ## Reasoning effort
 

@@ -98,4 +98,35 @@ describe('ChatService interrupt', () => {
         const messages = service.chatImpl.messages();
         expect(messages).toHaveLength(0);
     });
+
+    it('records usage captured before an abort in the summary', async () => {
+        const usage = { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 };
+
+        class AbortingWithUsageService extends ChatService {
+            constructor() {
+                const cfg = new ChatServiceConfiguration();
+                cfg.systemPromptDir = '';
+                super(cfg);
+            }
+
+            protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
+                yield { type: StreamEventType.Content, text: 'First' };
+                yield { type: StreamEventType.Usage, usage };
+                await new Promise<void>((resolve) => {
+                    if (signal?.aborted) resolve();
+                    else signal?.addEventListener('abort', () => resolve());
+                });
+                throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+            }
+        }
+
+        const service = new AbortingWithUsageService();
+        const sendPromise = service.send();
+        await new Promise(process.nextTick);
+        service.interrupt();
+        await expect(sendPromise).resolves.toBeUndefined();
+
+        expect(service.stream().summary()[0]!.usage).toEqual(usage);
+        expect(service.stream().finishReason()).toBe(FinishReason.Aborted);
+    });
 });

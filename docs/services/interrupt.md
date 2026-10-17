@@ -35,3 +35,5 @@ service.stream().hook().chunks(ChunkType.Finish).do((chunk) => {
 });
 ```
 
+![Interrupt flow: abort, Aborted finish chunk, and retry on the next send()](../assets/llm-chat-interrupt-resend.svg)
+

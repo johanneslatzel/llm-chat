@@ -21,7 +21,7 @@ Register with the same `add()` call used for single tools:
 service.tools().add(new WeatherPackage());
 ```
 
-### Tutorial
+## Tutorial
 
 Override `tutorial()` to return a usage string, or leave it as `null` (default):
 
@@ -42,8 +42,8 @@ When the `ToolSuite` is wired to a `ChatService`, it automatically populates the
 that has tutorial content. Each package becomes a sub-container titled
 `Tool Package <ClassName>` with two children:
 
-- **Applicability** — comma-separated list of tool names
-- **Tutorial** — the value returned by `tutorial()`
+- **Applicability**: comma-separated list of tool names
+- **Tutorial**: the value returned by `tutorial()`
 
 The resulting system prompt looks like:
 
@@ -58,7 +58,7 @@ tutorials
 
 If `tutorial()` returns `null`, no entry is created.
 
-### Adding tools after construction
+## Adding tools after construction
 
 Use the protected `add(tool)` method:
 
@@ -74,7 +74,7 @@ class WeatherPackage extends ToolPackage {
 
 Duplicates throw; a tool name must be unique across all registered tools and packages.
 
-### Managing tutorials
+## Managing tutorials
 
 The `ToolSuite` interface exposes `clear()` and `rebuildTutorials()`.
 

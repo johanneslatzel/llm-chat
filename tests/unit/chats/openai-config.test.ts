@@ -114,6 +114,18 @@ describe('OpenAIChatServiceConfiguration', () => {
         expect(cfg.verbosity).toBeUndefined();
         vi.unstubAllEnvs();
     });
+
+    it('defaults includeUsage to false', () => {
+        const cfg = new OpenAIChatServiceConfiguration();
+        expect(cfg.includeUsage).toBe(false);
+    });
+
+    it('reads includeUsage from env', () => {
+        vi.stubEnv('LLM_CHAT_OPENAI_INCLUDE_USAGE', 'true');
+        const cfg = new OpenAIChatServiceConfiguration();
+        expect(cfg.includeUsage).toBe(true);
+        vi.unstubAllEnvs();
+    });
 });
 
 describe('openAIConfig parameters', () => {
@@ -252,5 +264,38 @@ describe('openAIConfig parameters', () => {
 
         const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
         expect(callArgs.verbosity).toBe('high');
+    });
+
+    it('passes stream_options when includeUsage is enabled', async () => {
+        const mockChunks = makeChunks([
+            { content: 'Hi' },
+            { finish_reason: 'stop' },
+        ]);
+        const mock = createMockOpenAI(mockChunks);
+        const openAIConfig = new OpenAIChatServiceConfiguration();
+        openAIConfig.model = 'test-model';
+        openAIConfig.includeUsage = true;
+        const service = new OpenAIChatService(mock, openAIConfig, createOpenAIConfig());
+
+        await (service as any).createStream().next();
+
+        const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+        expect(callArgs.stream_options).toEqual({ include_usage: true });
+    });
+
+    it('omits stream_options by default', async () => {
+        const mockChunks = makeChunks([
+            { content: 'Hi' },
+            { finish_reason: 'stop' },
+        ]);
+        const mock = createMockOpenAI(mockChunks);
+        const openAIConfig = new OpenAIChatServiceConfiguration();
+        openAIConfig.model = 'test-model';
+        const service = new OpenAIChatService(mock, openAIConfig, createOpenAIConfig());
+
+        await (service as any).createStream().next();
+
+        const callArgs = (mock.chat.completions.create as any).mock.calls[0][0];
+        expect(callArgs.stream_options).toBeUndefined();
     });
 });

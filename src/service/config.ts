@@ -1,4 +1,4 @@
-import { envInt, envFloat, envString } from '../env.js';
+import { envInt, envFloat, envString, envBool } from '../env.js';
 
 /** How much reasoning effort the model should spend (for reasoning models like o3). */
 export enum ReasoningEffort {
@@ -85,4 +85,6 @@ export class OpenAIChatServiceConfiguration {
         const val = raw.toLowerCase() as Verbosity;
         return Object.values(Verbosity).includes(val) ? val : undefined;
     })();
+    /** Request streamed token usage by sending `stream_options.include_usage` (env: `LLM_CHAT_OPENAI_INCLUDE_USAGE`, default: `false`). Some OpenAI-compatible servers reject unknown streaming options, so this is opt-in. */
+    includeUsage?: boolean = envBool('LLM_CHAT_OPENAI_INCLUDE_USAGE', false);
 }

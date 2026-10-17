@@ -135,6 +135,7 @@ describe('message conversion - all roles', () => {
         const mock = createMockOpenAI(mockChunks);
         const service = new OpenAIChatService(mock, { model: 'test-model' }, cfg);
         service.chatImpl.system().add(new Prompt('Title', 'You should not see this.'));
+        expect(service.chatImpl.getSystem()!.content).toBe('You are a flat prompt bot.');
 
         await (service as any).createStream().next();
 

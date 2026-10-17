@@ -21,13 +21,24 @@ export class Chat implements ChatInterface {
         return this._sessionId;
     }
     private _systemPrompt = new PromptContainer('');
+    private _systemResolver: (() => ChatMessage | undefined) | null = null;
 
     getSystem(): ChatMessage | null {
+        const override = this._systemResolver?.();
+        if (override !== undefined) return override;
         return this._systemPrompt.hasContent() ? this._systemPrompt.message() : null;
     }
 
     system(): PromptContainer {
         return this._systemPrompt;
+    }
+
+    /**
+     * @internal Installed by {@link ChatService}. Returns a system message that
+     * overrides the prompt tree, or `undefined` to fall back to the tree.
+     */
+    setSystemResolver(resolver: (() => ChatMessage | undefined) | null): void {
+        this._systemResolver = resolver;
     }
     private _messages: ChatMessage[] = [];
     private _historicMessages: ChatMessage[] = [];

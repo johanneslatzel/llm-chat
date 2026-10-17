@@ -1,3 +1,5 @@
 # Examples
 
-- **[Quick Start](quick-start.md)** — basic chat with tools
+## Navigation
+
+- **[Quick Start](quick-start.md)**: basic chat with tools

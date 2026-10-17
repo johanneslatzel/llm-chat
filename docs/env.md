@@ -1,6 +1,6 @@
 # Environment Variables
 
-Set these however you prefer (shell, `.env`, etc.). A `.env.example` is included.
+Set these in the shell, a `.env` file, or the process environment. A `.env.example` is included.
 
 ## Connection
 
@@ -16,13 +16,14 @@ Read at `OpenAIChatService` construction:
 
 | Variable | Description |
 |----------|-------------|
-| `LLM_CHAT_OPENAI_TEMPERATURE` | Sampling temperature (0–2) |
+| `LLM_CHAT_OPENAI_TEMPERATURE` | Sampling temperature (0-2) |
 | `LLM_CHAT_OPENAI_MAX_TOKENS` | `max_tokens` |
 | `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS` | `max_completion_tokens` (o1/o3, takes precedence) |
 | `LLM_CHAT_OPENAI_TOP_P` | Nucleus sampling |
 | `LLM_CHAT_OPENAI_REASONING_EFFORT` | `reasoning_effort` for o-series models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
 | `LLM_CHAT_OPENAI_TOOL_CHOICE` | `tool_choice` (`none`, `auto`, `required`) |
 | `LLM_CHAT_OPENAI_VERBOSITY` | `verbosity` (`low`, `medium`, `high`) |
+| `LLM_CHAT_OPENAI_INCLUDE_USAGE` | Request streamed token usage via `stream_options.include_usage` (`true`/`1`; default `false`) |
 
 ## Chat Service
 
@@ -35,7 +36,7 @@ Read at `OpenAIChatService` construction:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general` |
+| `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general`. Read only if it exists; never created |
 | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
 
 ## JSON hooks

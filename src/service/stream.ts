@@ -6,10 +6,12 @@ import {
     ContentChunk,
     ReasoningChunk,
     ToolCallDeltaChunk,
+    UsageChunk,
     FinishChunk,
     Chunk,
     ChunkStreamInterface,
-    StreamSummary
+    StreamSummary,
+    CompletionUsage
 } from './stream-types.js';
 
 /** Accumulates streaming chunks, tracks finish reasons, and emits hook events. */
@@ -80,6 +82,19 @@ export class ChunkStream implements ChunkStreamInterface {
         };
         this._chunks.push(chunk);
         this._finishReason = reason;
+        this._notify(chunk);
+    }
+
+    /** Append a token-usage chunk. */
+    addUsageChunk(usage: CompletionUsage): void {
+        const chunk: UsageChunk = {
+            type: ChunkType.Usage,
+            usage,
+            timestamp: new Date(),
+            seq: this._seq++,
+            batch: this._batch
+        };
+        this._chunks.push(chunk);
         this._notify(chunk);
     }
 

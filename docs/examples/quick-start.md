@@ -21,7 +21,7 @@ for (const msg of chat.messages()) {
 }
 ```
 
-> Set `LLM_CHAT_OPENAI_DEFAULT_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` as environment variables (or load them from `.env` with your own dotenv setup). See [Environment Variables](../env.md).
+> Set `LLM_CHAT_OPENAI_DEFAULT_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` as environment variables (or load them from `.env` with a dotenv setup). See [Environment Variables](../env.md).
 
 ## With tools
 

@@ -2,15 +2,15 @@
 
 ## Background
 
-`Chat` hardcodes message origin per method (`user()` → `User`, `assistant()` → `Model`, etc.).
+`Chat` hardcodes message origin per method (`user()` to `User`, `assistant()` to `Model`, etc.).
 Hooks that queue messages via the `queue-message` action need to set `origin: Hook`.
 
 ## Interfaces
 
 Two separate interfaces keep the concerns apart:
 
-- **`MessageWriter`** — clean interface without origin params. Used by `Chat` and the public `service.queue()` API.
-- **`HookMessageWriter`** — same methods but with a required `origin` param. Used internally by hooks.
+- **`MessageWriter`**: clean interface without origin params. Used by `Chat` and the public `service.queue()` API.
+- **`HookMessageWriter`**: same methods but with a required `origin` param. Used internally by hooks.
 
 `MessageQueue` implements both. Each method accepts an optional `origin`: when called via `MessageWriter` the caller omits it (default `User`/`Tool`), when called via `HookMessageWriter` the caller passes it explicitly (e.g. `ChatMessageOrigin.Hook`).
 
@@ -52,8 +52,9 @@ Every `ChatMessage` carries a required `origin` field:
 
 | File | Role |
 |------|------|
-| `src/chat/chat.ts` | `MessageWriter`, `HookMessageWriter`, `ChatMessageOrigin`, `ChatMessage.origin` |
+| `src/chat/types.ts` | `MessageWriter`, `HookMessageWriter`, `ChatMessageOrigin`, `ChatMessage.origin` |
+| `src/chat/chat.ts` | `Chat` implementation with per-method message origin |
 | `src/chat/queue.ts` | `MessageQueue` implements both writer interfaces |
 | `src/hooks/json-hooks.ts` | `JsonHookControls`, `JsonHookRegistry` accepts hook writer + controls |
 | `src/service/service.ts` | `ChatService` implements `JsonHookControls`, wires `MessageQueue` to registry |
-| `src/index.ts` | Public API exports (does NOT re-export hook-internal types) |
+| `src/index.ts` | Public API exports (re-exports `MessageWriter`; `HookMessageWriter` and `JsonHookControls` stay internal) |

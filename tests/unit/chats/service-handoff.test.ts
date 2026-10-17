@@ -74,6 +74,16 @@ describe('ChatService handoff and context estimation', () => {
             expect(tokens).toBe(expected);
         });
 
+        it('estimateTokens counts the flat systemPrompt', async () => {
+            const cfg = new ChatServiceConfiguration();
+            cfg.systemPromptDir = '';
+            cfg.systemPrompt = 'You are a flat assistant.';
+            const service = new TestChatService([], cfg);
+
+            const tokens = await service.estimateTokens();
+            expect(tokens).toBe(Math.ceil('You are a flat assistant.'.length / 4));
+        });
+
         it('estimateTokens includes queued messages', async () => {
             const service = new TestChatService([]);
             await service.queue().user('Queued message');

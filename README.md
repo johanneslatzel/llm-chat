@@ -13,6 +13,8 @@
 
 Chat agents with typed tool calls, streaming, and hooks. Works with OpenAI-compatible APIs.
 
+![llm-chat architecture](docs/assets/llm-chat-architecture.svg)
+
 ## Features
 
 - chunk streaming, message queueing, serializable chat history
@@ -65,3 +67,4 @@ Issues and PRs welcome at [github.com/johanneslatzel/llm-chat](https://github.co
 | [llm-chat-time](https://github.com/johanneslatzel/llm-chat-time) | [docs](https://johanneslatzel.github.io/llm-chat-time/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-time) | get datetime, use stopwatch and timers |
 | [llm-chat-web](https://github.com/johanneslatzel/llm-chat-web) | [docs](https://johanneslatzel.github.io/llm-chat-web/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-web) | search and fetch the web |
 | [llm-chat-workspace](https://github.com/johanneslatzel/llm-chat-workspace) | [docs](https://johanneslatzel.github.io/llm-chat-workspace/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-workspace) | base tools for workspace management |
+| [llm-chat-drawio](https://github.com/johanneslatzel/llm-chat-drawio) | [docs](https://johanneslatzel.github.io/llm-chat-drawio/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-drawio) | drawio diagram tools |

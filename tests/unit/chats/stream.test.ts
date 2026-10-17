@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ChunkStream } from '../../../src/service/stream.js';
-import { ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, FinishChunk, type StreamSummary } from '../../../src/service/stream-types.js';
+import { ChunkType, ContentChunk, ReasoningChunk, ToolCallDeltaChunk, UsageChunk, FinishChunk, type StreamSummary } from '../../../src/service/stream-types.js';
 import { FinishReason } from '../../../src/chat/types.js';
 
 describe('ChunkStream', () => {
@@ -45,6 +45,16 @@ describe('ChunkStream', () => {
             expect(chunks[0]!.type).toBe(ChunkType.ToolCallDelta);
             expect((chunks[0]! as any).toolCallId).toBeUndefined();
             expect((chunks[0]! as any).toolCallName).toBeUndefined();
+        });
+
+        it('adds usage chunks', () => {
+            const stream = new ChunkStream();
+            const usage = { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 };
+            stream.addUsageChunk(usage);
+            const chunks = stream.chunks();
+            expect(chunks).toHaveLength(1);
+            expect(chunks[0]!.type).toBe(ChunkType.Usage);
+            expect((chunks[0]! as UsageChunk).usage).toEqual(usage);
         });
 
         it('adds finish chunk', () => {
@@ -200,6 +210,16 @@ describe('ChunkStream', () => {
             stream.addFinishChunk(FinishReason.Stop);
             expect(handler).toHaveBeenCalledWith(
                 expect.objectContaining({ type: ChunkType.Finish, finishReason: FinishReason.Stop })
+            );
+        });
+
+        it('fires usage chunk hooks', () => {
+            const stream = new ChunkStream();
+            const handler = vi.fn();
+            stream.hook().chunks(ChunkType.Usage).do(handler);
+            stream.addUsageChunk({ prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 });
+            expect(handler).toHaveBeenCalledWith(
+                expect.objectContaining({ type: ChunkType.Usage })
             );
         });
 

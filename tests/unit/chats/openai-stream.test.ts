@@ -297,4 +297,102 @@ describe('OpenAIChatService stream creation', () => {
         }
         expect(events[1]!.reason).toBe(FinishReason.Stop);
     });
+
+    it('yields usage before finish when the server sends a usage-only chunk', async () => {
+        const mockChunks = makeChunks([
+            { content: 'Hi' },
+            { finish_reason: 'stop' },
+            { usageOnly: true, usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } },
+        ]);
+        const mock = createMockOpenAI(mockChunks);
+        const service = new OpenAIChatService(mock, { model: 'test-model' }, createOpenAIConfig());
+
+        const events: any[] = [];
+        for await (const event of (service as any).createStream()) {
+            events.push(event);
+        }
+
+        expect(events.map((e) => e.type)).toEqual(['content', 'usage', 'finish']);
+        expect(events[1]!.usage).toEqual({
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+        });
+        expect(events[2]!.reason).toBe(FinishReason.Stop);
+    });
+
+    it('captures usage sent on the same chunk as finish_reason', async () => {
+        const mockChunks = makeChunks([
+            {
+                content: 'Hi',
+                finish_reason: 'stop',
+                usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+            },
+        ]);
+        const mock = createMockOpenAI(mockChunks);
+        const service = new OpenAIChatService(mock, { model: 'test-model' }, createOpenAIConfig());
+
+        const events: any[] = [];
+        for await (const event of (service as any).createStream()) {
+            events.push(event);
+        }
+
+        expect(events.map((e) => e.type)).toEqual(['content', 'usage', 'finish']);
+        expect(events[1]!.usage.total_tokens).toBe(3);
+    });
+
+    it('reads finish_reason from a chunk with a null delta', async () => {
+        const nullDeltaChunk = {
+            id: 'test',
+            object: 'chat.completion.chunk',
+            created: 123,
+            model: 'test-model',
+            choices: [{ index: 0, delta: null, finish_reason: 'stop' }],
+            usage: null
+        } as unknown as ChatCompletionChunk;
+
+        const stream = {
+            [Symbol.asyncIterator]() {
+                const items = [nullDeltaChunk];
+                let i = 0;
+                return {
+                    next: async () => {
+                        if (i >= items.length) {
+                            return { done: true, value: undefined as unknown as ChatCompletionChunk };
+                        }
+                        return { done: false, value: items[i++]! };
+                    }
+                };
+            }
+        };
+
+        const mock = vi.fn().mockReturnValue(Promise.resolve(stream));
+        const api = { apiKey: 'test', chat: { completions: { create: mock } } } as any;
+        const service = new OpenAIChatService(api, { model: 'test-model' }, createOpenAIConfig());
+
+        const events: any[] = [];
+        for await (const event of (service as any).createStream()) {
+            events.push(event);
+        }
+
+        expect(events).toHaveLength(1);
+        expect(events[0]!.type).toBe('finish');
+        expect(events[0]!.reason).toBe(FinishReason.Stop);
+    });
+
+    it('yields no usage event when the server sends none', async () => {
+        const mockChunks = makeChunks([
+            { content: 'Hi' },
+            { finish_reason: 'stop' },
+        ]);
+        const mock = createMockOpenAI(mockChunks);
+        const service = new OpenAIChatService(mock, { model: 'test-model' }, createOpenAIConfig());
+
+        const events: any[] = [];
+        for await (const event of (service as any).createStream()) {
+            events.push(event);
+        }
+
+        expect(events.map((e) => e.type)).toEqual(['content', 'finish']);
+    });
 });

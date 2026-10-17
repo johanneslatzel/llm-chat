@@ -112,7 +112,11 @@ export interface ChatInterface extends HasHooks<ChatHookBuilder>, MessageWriter 
     messages(): ChatMessage[];
     /** Serialise the entire chat to JSON. */
     toJSON(): ChatJSON;
-    /** The system message, or `null` if none is set. */
+    /**
+     * The effective system message: a service-installed override (a flat system
+     * prompt configured on the service) when present, otherwise the composed
+     * prompt tree. `null` when neither yields content.
+     */
     getSystem(): ChatMessage | null;
     /** Access the hook builder to register message hooks. */
     hook(): ChatHookBuilder;

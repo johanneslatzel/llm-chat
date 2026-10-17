@@ -45,6 +45,12 @@ export type {
     ContentChunk,
     ReasoningChunk,
     ToolCallDeltaChunk,
+    UsageChunk,
     FinishChunk,
     StreamSummary
+} from './service/stream-types.js';
+export type {
+    CompletionUsage,
+    CompletionUsageCompletionTokensDetails,
+    CompletionUsagePromptTokensDetails
 } from './service/stream-types.js';
