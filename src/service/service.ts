@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
-import { envInt, envOptionalString, envString } from '../env.js';
+import { envBool, envInt, envOptionalString, envString } from '../env.js';
 import { Chat } from '../chat/chat.js';
 import {
     ChatInterface,
@@ -19,29 +19,24 @@ import type { ChunkStreamInterface, CompletionUsage } from './stream-types.js';
 import { ToolSuite, ToolSuiteInterface } from '../tools/suite.js';
 import { JsonHookRegistry, type JsonHookInfo, type JsonHookControls } from '../hooks/json-hooks.js';
 import { ServiceEvent, ServiceHookBuilder } from './service-hooks.js';
+import {
+    DEFAULT_INLINE_REASONING_MARKERS,
+    type InlineReasoningMarkers
+} from './inline-reasoning.js';
+import {
+    DEFAULT_INLINE_TOOL_CALL_MARKERS,
+    INLINE_TOOL_CALL_INDEX_BASE,
+    type InlineToolCallMarkers
+} from './inline-tool-calls.js';
+import {
+    createInlineStreamNormalizer,
+    type InlineNormalizationOptions
+} from './inline-normalizer.js';
+import { StreamEventType, type StreamEvent } from './stream-events.js';
 
-/** Discriminant for stream event types yielded by a {@link ChatService}. */
-export enum StreamEventType {
-    Content = 'content',
-    ToolCallDelta = 'tool_call_delta',
-    Usage = 'usage',
-    Finish = 'finish',
-    Reasoning = 'reasoning'
-}
+export { StreamEventType };
+export type { StreamEvent };
 
-/** A single event yielded by a service's internal stream iterator. */
-export type StreamEvent =
-    | { type: StreamEventType.Content; text: string }
-    | {
-          type: StreamEventType.ToolCallDelta;
-          index: number;
-          id?: string;
-          name?: string;
-          arguments?: string;
-      }
-    | { type: StreamEventType.Usage; usage: CompletionUsage }
-    | { type: StreamEventType.Finish; reason: FinishReason }
-    | { type: StreamEventType.Reasoning; text: string };
 /** Configuration for a {@link ChatService}. All fields can be set via environment variables. */
 export class ChatServiceConfiguration {
     /** Maximum number of tool-call rounds before the loop is interrupted (env: `LLM_CHAT_MAX_TOOL_CALL_ROUNDS`, default: 10). */
@@ -75,6 +70,16 @@ export class ChatServiceConfiguration {
     systemPrompt?: string;
     /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
     trimMessages?: boolean = false;
+    /** Parse inline reasoning markers in streamed content (env: `LLM_CHAT_PARSE_INLINE_REASONING`, default: `false`). Disabled by default because marker text may be ordinary content for some models. */
+    parseInlineReasoning?: boolean = envBool('LLM_CHAT_PARSE_INLINE_REASONING', false);
+    /** Marker pair used when {@link parseInlineReasoning} is enabled (default: `<think>` / `</think>`). */
+    inlineReasoningMarkers?: InlineReasoningMarkers = { ...DEFAULT_INLINE_REASONING_MARKERS };
+    /** Parse explicit inline tool-call blocks in streamed content (env: `LLM_CHAT_PARSE_INLINE_TOOL_CALLS`, default: `false`). */
+    parseInlineToolCalls?: boolean = envBool('LLM_CHAT_PARSE_INLINE_TOOL_CALLS', false);
+    /** Marker pair used when {@link parseInlineToolCalls} is enabled (default: `<tool_call>` / `</tool_call>`). */
+    inlineToolCallMarkers?: InlineToolCallMarkers = {
+        ...DEFAULT_INLINE_TOOL_CALL_MARKERS
+    };
     /** Context window size hint in tokens (default: `0` = unlimited). When > 0,
      *  the value is used by {@link ChatService.isContextWindowExceeded} as the
      *  threshold for token estimation. This is a hint, not a hard limit —
@@ -415,9 +420,35 @@ export abstract class ChatService implements JsonHookControls {
         this._tools.rebuildTutorials();
     }
 
+    /** Maps service configuration to inline normalizer options. */
+    private _inlineNormalizationOptions(): InlineNormalizationOptions {
+        return {
+            parseInlineReasoning: this.config.parseInlineReasoning === true,
+            reasoningMarkers:
+                this.config.inlineReasoningMarkers ?? DEFAULT_INLINE_REASONING_MARKERS,
+            parseInlineToolCalls: this.config.parseInlineToolCalls === true,
+            toolCallMarkers: this.config.inlineToolCallMarkers ?? DEFAULT_INLINE_TOOL_CALL_MARKERS
+        };
+    }
+
+    /**
+     * Normalizes provider stream events when inline parsing is enabled.
+     *
+     * The normalizer owns the parser and inline tool-call index for one
+     * provider round. A disabled configuration returns the provider stream
+     * unchanged.
+     */
+    private _normalizedStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
+        const normalizer = createInlineStreamNormalizer(this._inlineNormalizationOptions());
+        return normalizer === null
+            ? this.createStream(signal)
+            : normalizer.normalize(this.createStream(signal));
+    }
+
     private async sendLoop(iteration: number): Promise<void> {
         let content = '';
         let reasoningContent = '';
+        let inlineToolCallsDetected = false;
         let usage: CompletionUsage | undefined;
         const toolCallAccumulators = new Map<
             number,
@@ -433,7 +464,7 @@ export abstract class ChatService implements JsonHookControls {
         }
 
         try {
-            for await (const event of this.createStream(this._abortController?.signal)) {
+            for await (const event of this._normalizedStream(this._abortController?.signal)) {
                 switch (event.type) {
                     case StreamEventType.Content:
                         content += event.text;
@@ -441,6 +472,9 @@ export abstract class ChatService implements JsonHookControls {
                         break;
 
                     case StreamEventType.ToolCallDelta:
+                        if (event.index >= INLINE_TOOL_CALL_INDEX_BASE) {
+                            inlineToolCallsDetected = true;
+                        }
                         this.accumulateToolCall(toolCallAccumulators, event);
                         this._chunkStream.addToolCallDeltaChunk(
                             event.arguments || '',
@@ -455,17 +489,24 @@ export abstract class ChatService implements JsonHookControls {
                         this._chunkStream.addUsageChunk(event.usage);
                         break;
 
-                    case StreamEventType.Finish:
-                        this._chunkStream.addFinishChunk(event.reason);
+                    case StreamEventType.Finish: {
+                        const reason =
+                            inlineToolCallsDetected &&
+                            event.reason !== FinishReason.ToolCalls &&
+                            event.reason !== FinishReason.Aborted
+                                ? FinishReason.ToolCalls
+                                : event.reason;
+                        this._chunkStream.addFinishChunk(reason);
                         await this.handleFinish(
                             content,
                             reasoningContent,
                             toolCallAccumulators,
-                            event.reason,
+                            reason,
                             iteration,
                             usage
                         );
                         return;
+                    }
 
                     case StreamEventType.Reasoning:
                         reasoningContent += event.text;

@@ -1,6 +1,6 @@
 # OpenAIChatService
 
-Works with any OpenAI-compatible API (OpenAI, LM Studio, etc.). Reasoning messages are stored locally but filtered out when sent to the API.
+Works with any OpenAI-compatible API (OpenAI, LM Studio, etc.). Reasoning messages are stored locally but filtered out when sent to the API. Structured reasoning fields are recognised automatically; inline markers in content are parsed only when `ChatServiceConfiguration.parseInlineReasoning` is enabled.
 
 ```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
@@ -73,7 +73,7 @@ const service = new OpenAIChatService(api, openAIConfig, config);
 // sends: { role: "system", content: "You are a helpful assistant." }
 ```
 
-While set, file-based system prompts are not loaded, `chat.getSystem()` returns the flat string, and it is sent instead of the prompt tree. This also composes with `useDeveloperRole`:
+While set, file-based system prompts are not loaded, `chat.getSystem()` returns the flat string, and it is sent instead of the prompt tree. When `useDeveloperRole` is enabled, the flat system prompt is sent with the `developer` role.
 
 ## Token usage
 
@@ -152,6 +152,20 @@ feed into `ReasoningChunk` objects in the stream and are accumulated into
 `StreamSummary.reasoning`. The original `ChatRole.Reasoning` message filtering
 (`filterReasoning`) is unaffected; it controls what is **sent** to the API,
 not what is received from it.
+
+Reasoning that arrives inline in `delta.content` is not extracted by
+`OpenAIChatService` itself. Enable `ChatServiceConfiguration.parseInlineReasoning`
+to normalise explicit markers such as `<think>...</think>` through the shared
+`ChatService` layer. See [Inline reasoning](inline-reasoning.md). Structured
+fields continue to work whether or not that option is enabled. If a provider
+populates both structured fields and inline markers, both channels are preserved
+in arrival order; the library does not attempt heuristic deduplication.
+
+Tool calls normally arrive as structured `delta.tool_calls` and are executed
+unchanged. To parse explicit `<tool_call>` blocks embedded in content, enable
+`ChatServiceConfiguration.parseInlineToolCalls`; see
+[Inline tool calls](inline-tool-calls.md). Structured and inline calls can
+coexist, but they are not deduplicated.
 
 ## Tool choice
 

@@ -70,6 +70,40 @@ ToolParameterProperty.array("A list of addresses", ToolParameterProperty.object(
 ToolParameterProperty.object("A nested object")                              // returns a builder (see below)
 ```
 
+## Hidden parameter aliases
+
+Models sometimes call an array parameter by a singular name, for example
+`path` instead of `paths`. A parameter can accept such hidden aliases without
+advertising them in the schema:
+
+```typescript
+new ToolParameters(
+    {
+        paths: ToolParameterProperty.array("Array of file paths to read")
+            .accepts("path")
+    },
+    ["paths"]
+)
+```
+
+Rules:
+
+- Aliases are only applied to top-level parameters. Nested object properties
+  are not scanned.
+- The canonical name always wins. If both `paths` and `path` are present,
+  `paths` is used.
+- With multiple aliases, the first one declared wins:
+  `.accepts("path", "file")` prefers `path` over `file`.
+- For an array-typed parameter, a scalar alias value is wrapped in a
+  one-element array (`path: "a.txt"` becomes `paths: ["a.txt"]`).
+- Aliases are removed from the arguments before `onExecute` runs.
+- Aliases are never serialized into the schema, so `toOpenAI()` shows only the canonical parameter.
+- Invalid declarations throw at construction: empty aliases, aliases equal to
+  the canonical name, aliases that collide with a declared parameter, and
+  duplicate aliases across parameters.
+
+Alias acceptance covers the direct `llm-chat` tool path.
+
 ## Nested object parameters
 
 For parameters that are objects with their own sub-properties, use `ToolParameterProperty.object(desc)` which returns an `ObjectPropertyBuilder`:

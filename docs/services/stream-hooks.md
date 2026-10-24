@@ -91,6 +91,16 @@ const totalTokens = summaries.reduce((sum, s) => sum + (s.usage?.total_tokens ??
 
 Summaries accumulate across multiple `send()` calls. Call `service.stream().clearSummaries()` to reset them without affecting chunks or hooks.
 
+Reasoning chunks can come from structured provider fields or from explicit
+inline markers when `parseInlineReasoning` is enabled. Live chunks preserve the
+order and boundaries of reasoning segments; `StreamSummary.reasoning`
+concatenates them for the provider round. See
+[Inline reasoning](inline-reasoning.md).
+
+When `parseInlineToolCalls` is enabled, a complete `<tool_call>` block produces
+a normal `ChunkType.ToolCallDelta` chunk and participates in the tool-call loop.
+See [Inline tool calls](inline-tool-calls.md).
+
 ## Ordering guarantee
 
 When the stream finishes, the `FinishChunk` is pushed to the stream (and stream hooks fire) **before** the completed message is appended to chat (and chat hooks fire). This means stream hooks see the finish before chat hooks see the resulting message.

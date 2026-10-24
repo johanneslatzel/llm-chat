@@ -93,6 +93,23 @@ export function createMockOpenAI(chunks: MockChunk[]): OpenAI {
     } as unknown as OpenAI;
 }
 
+export function createSequencedMockOpenAI(rounds: MockChunk[][]): OpenAI {
+    const mockCreate = vi.fn();
+    for (const chunks of rounds) {
+        mockCreate.mockReturnValueOnce(Promise.resolve(createStreamFromChunks(chunks)));
+    }
+    mockCreate.mockReturnValue(Promise.resolve(createStreamFromChunks([])));
+
+    return {
+        apiKey: 'test-key',
+        chat: {
+            completions: {
+                create: mockCreate
+            }
+        }
+    } as unknown as OpenAI;
+}
+
 export function createMockOpenAIWithError(error: Error): OpenAI {
     const mockCreate = vi.fn().mockRejectedValue(error);
 

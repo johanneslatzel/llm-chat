@@ -8,6 +8,11 @@ import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } f
 import { OpenAIChatServiceConfiguration } from './config.js';
 import type { CompletionUsage } from './stream-types.js';
 
+/** Legacy request parameter for providers that do not support `max_completion_tokens`. */
+interface LegacyMaxTokensParameter {
+    max_tokens: number;
+}
+
 function toFinishReason(raw: string | null | undefined): FinishReason | null {
     switch (raw) {
         case 'stop':
@@ -106,6 +111,10 @@ export class OpenAIChatService extends ChatService {
             this.openAIConfig.useDeveloperRole ?? false
         );
         const openaiTools = this._tools.getTools();
+        const legacyMaxTokens: LegacyMaxTokensParameter | undefined =
+            this.openAIConfig?.maxTokens !== undefined
+                ? { max_tokens: this.openAIConfig.maxTokens }
+                : undefined;
 
         const stream = await this.api.chat.completions.create(
             {
@@ -117,9 +126,7 @@ export class OpenAIChatService extends ChatService {
                     : {}),
                 ...(this.openAIConfig?.maxCompletionTokens !== undefined
                     ? { max_completion_tokens: this.openAIConfig.maxCompletionTokens }
-                    : this.openAIConfig?.maxTokens !== undefined
-                      ? { max_tokens: this.openAIConfig.maxTokens }
-                      : {}),
+                    : (legacyMaxTokens ?? {})),
                 ...(this.openAIConfig?.stop !== undefined ? { stop: this.openAIConfig.stop } : {}),
                 ...(this.openAIConfig?.topP !== undefined ? { top_p: this.openAIConfig.topP } : {}),
                 ...(this.openAIConfig?.reasoningEffort !== undefined

@@ -29,6 +29,8 @@ export { Prompt, PromptContainer } from './chat/system-prompt.js';
 export { type TokenEstimator, CharCountEstimator } from './chat/token-estimator.js';
 export { ChatServiceConfiguration, ChatService, StreamEventType } from './service/service.js';
 export type { StreamEvent } from './service/service.js';
+export type { InlineReasoningMarkers } from './service/inline-reasoning.js';
+export type { InlineToolCallMarkers } from './service/inline-tool-calls.js';
 export {
     OpenAIChatServiceConfiguration,
     ReasoningEffort,

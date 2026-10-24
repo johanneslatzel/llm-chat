@@ -30,6 +30,8 @@ Read at `OpenAIChatService` construction:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `10` | Max tool-call recursion depth |
+| `LLM_CHAT_PARSE_INLINE_REASONING` | `false` | Parse explicit inline reasoning markers in streamed content; see [Inline reasoning](services/inline-reasoning.md) |
+| `LLM_CHAT_PARSE_INLINE_TOOL_CALLS` | `false` | Parse explicit inline tool-call blocks in streamed content; see [Inline tool calls](services/inline-tool-calls.md) |
 | `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window size hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` |
 
 ## Prompts

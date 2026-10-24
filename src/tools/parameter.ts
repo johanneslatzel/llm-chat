@@ -25,6 +25,8 @@ export class ToolParameters {
     properties: Record<string, ToolParameterProperty>;
     /** Optional list of parameter names that must be provided. */
     required?: string[];
+    /** Whether any top-level property declares hidden aliases. */
+    private readonly hasAliases: boolean;
     /**
      * @param properties - Named parameter definitions.
      * @param required  - Parameter names that are required.
@@ -33,6 +35,90 @@ export class ToolParameters {
         this.properties = properties;
         if (required) {
             this.required = required;
+        }
+        this.validateAliases();
+        this.hasAliases = Object.values(this.properties).some(
+            (property) => property.aliases.length > 0
+        );
+    }
+
+    /**
+     * Returns a copy of the arguments with hidden alias keys rewritten to their
+     * canonical parameter names.
+     *
+     * The canonical name always wins when it is present. Otherwise the first
+     * alias in declaration order that has a value wins. A scalar alias value for
+     * an array-typed parameter is wrapped in a one-element array. Consumed alias
+     * keys are removed from the result.
+     *
+     * @param args - Raw tool-call arguments.
+     * @returns Normalized arguments, or `args` itself when no aliases exist.
+     */
+    normalizeArguments(args: Record<string, unknown>): Record<string, unknown> {
+        if (!this.hasAliases) {
+            return args;
+        }
+
+        const normalized = { ...args };
+        for (const [canonical, property] of Object.entries(this.properties)) {
+            if (property.aliases.length === 0) {
+                continue;
+            }
+
+            if (normalized[canonical] === undefined) {
+                for (const alias of property.aliases) {
+                    const value = normalized[alias];
+                    if (value === undefined) {
+                        continue;
+                    }
+                    normalized[canonical] =
+                        property.type === PropertyType.Array && !Array.isArray(value)
+                            ? [value]
+                            : value;
+                    break;
+                }
+            }
+
+            for (const alias of property.aliases) {
+                delete normalized[alias];
+            }
+        }
+        return normalized;
+    }
+
+    /** Validates that alias declarations are unambiguous and do not shadow declared names. */
+    private validateAliases(): void {
+        const declared = new Set(Object.keys(this.properties));
+        const claimed = new Map<string, string>();
+
+        for (const [canonical, property] of Object.entries(this.properties)) {
+            for (const alias of property.aliases) {
+                if (!alias.trim() || alias !== alias.trim()) {
+                    throw new Error(
+                        `Alias '${alias}' for parameter '${canonical}' must be a non-empty string without surrounding whitespace`
+                    );
+                }
+                if (alias === canonical) {
+                    throw new Error(
+                        `Alias '${alias}' for parameter '${canonical}' must differ from the canonical name`
+                    );
+                }
+                if (declared.has(alias)) {
+                    throw new Error(
+                        `Alias '${alias}' for parameter '${canonical}' collides with a declared parameter name`
+                    );
+                }
+
+                const owner = claimed.get(alias);
+                if (owner !== undefined) {
+                    throw new Error(
+                        owner === canonical
+                            ? `Alias '${alias}' is declared more than once for parameter '${canonical}'`
+                            : `Alias '${alias}' is declared for both '${owner}' and '${canonical}'`
+                    );
+                }
+                claimed.set(alias, canonical);
+            }
         }
     }
 
@@ -84,6 +170,11 @@ export class ToolParameterProperty {
     readonly required: string[] | undefined;
     /** Item schema for array-typed parameters (defaults to string when undefined). */
     readonly items: ToolParameterProperty | undefined;
+    /**
+     * Alternate top-level argument names accepted for this parameter, in
+     * precedence order. Aliases are never serialized into the tool schema.
+     */
+    readonly aliases: readonly string[];
 
     /**
      * @param description - Human-readable description.
@@ -91,20 +182,41 @@ export class ToolParameterProperty {
      * @param properties  - Nested property definitions (only valid for object type).
      * @param required    - Required sub-property keys (only valid for object type).
      * @param items       - Item schema (only valid for array type).
+     * @param aliases     - Hidden alternate argument names, in precedence order.
      */
     constructor(
         description: string,
         type: PropertyType = PropertyType.String,
         properties?: Record<string, ToolParameterProperty>,
         required?: string[],
-        items?: ToolParameterProperty
+        items?: ToolParameterProperty,
+        aliases?: readonly string[]
     ) {
         this.description = description;
         this.type = type;
         this.properties = properties;
         this.required = required;
         this.items = items;
+        this.aliases = aliases ? [...aliases] : [];
         this.validate();
+    }
+
+    /**
+     * Returns a copy of this property that also accepts the given hidden
+     * argument names. Aliases are tried in the order given and are never
+     * exposed in the tool schema.
+     *
+     * @param aliases - Alternate argument names to accept.
+     */
+    accepts(...aliases: string[]): ToolParameterProperty {
+        return new ToolParameterProperty(
+            this.description,
+            this.type,
+            this.properties,
+            this.required,
+            this.items,
+            [...this.aliases, ...aliases]
+        );
     }
 
     private validate(): void {

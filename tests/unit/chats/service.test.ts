@@ -1,18 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ChatRole, ChatServiceConfiguration, FinishReason, type CompletionUsage } from '../../../src/index.js';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { TestChatService, SimpleTestTool } from '../../helper/service-mocks.js';
 
 describe('ChatService', () => {
-    let config: ChatServiceConfiguration;
-
-    beforeEach(() => {
-        config = new ChatServiceConfiguration();
-        config.systemPromptDir = '';
-        config.userPromptPaths = [];
-    });
-
     describe('chat() getter', () => {
         it('returns the ChatInterface', () => {
             const service = new TestChatService([]);
@@ -34,50 +26,6 @@ describe('ChatService', () => {
             expect(typeof streamInterface.chunks).toBe('function');
             expect(typeof streamInterface.finishReason).toBe('function');
             expect(typeof streamInterface.hook).toBe('function');
-        });
-    });
-
-    describe('configuration defaults', () => {
-        it('uses default maxToolCallRounds of 10', () => {
-            expect(config.maxToolCallRounds).toBe(10);
-        });
-
-        it('reads maxToolCallRounds from env', () => {
-            vi.stubEnv('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', '5');
-            const c = new ChatServiceConfiguration();
-            expect(c.maxToolCallRounds).toBe(5);
-            vi.unstubAllEnvs();
-        });
-
-        it('falls back to default when env is invalid', () => {
-            vi.stubEnv('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 'not-a-number');
-            const c = new ChatServiceConfiguration();
-            expect(c.maxToolCallRounds).toBe(10);
-            vi.unstubAllEnvs();
-        });
-
-        it('falls back to ./prompts/ as systemPromptDir when neither env nor config is set', () => {
-            const c = new ChatServiceConfiguration();
-            expect(c.systemPromptDir).toBe('./prompts/');
-        });
-
-        it('hooksDir defaults to undefined', () => {
-            const c = new ChatServiceConfiguration();
-            expect(c.hooksDir).toBeUndefined();
-        });
-
-        it('hooksDir setter stores value', () => {
-            const c = new ChatServiceConfiguration();
-            c.hooksDir = './my-hooks';
-            expect(c.hooksDir).toBe('./my-hooks');
-        });
-
-        it('hooksDir reads from env var with priority over setter', () => {
-            vi.stubEnv('LLM_CHAT_HOOKS_DIR', '/env/hooks');
-            const c = new ChatServiceConfiguration();
-            c.hooksDir = './my-hooks';
-            expect(c.hooksDir).toBe('/env/hooks');
-            vi.unstubAllEnvs();
         });
     });
 

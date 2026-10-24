@@ -38,12 +38,21 @@ export abstract class Tool {
     }
 
     /**
+     * Returns a copy of the arguments with hidden parameter aliases rewritten to
+     * their canonical names. The canonical name wins when present; otherwise the
+     * first alias in declaration order wins.
+     */
+    public normalizeArguments(args: Record<string, unknown>): Record<string, unknown> {
+        return this.parameters.normalizeArguments(args);
+    }
+
+    /**
      * Executes the tool with the given arguments. Walks the {@link PartialToolResult.next}
      * chain (if any) and returns one {@link ToolResult} per node.
      */
     public async execute(args: Record<string, unknown>): Promise<ToolResult[]> {
         try {
-            const partialHead = await this.onExecute(args);
+            const partialHead = await this.onExecute(this.normalizeArguments(args));
             const toolResults: ToolResult[] = [];
             let current: PartialToolResult | undefined = partialHead;
             while (current) {

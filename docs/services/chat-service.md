@@ -28,7 +28,16 @@ The base class accumulates stream events, assembles tool calls, recurses on tool
 | `hooksDir` | `LLM_CHAT_HOOKS_DIR` | unset | Directory containing `.json` hook definition files |
 | `systemPrompt` | — | unset | Flat string that overrides the system prompt tree entirely; file-based system prompts are skipped |
 | `trimMessages` | — | `false` | Trim leading/trailing whitespace from assistant and reasoning content before storing |
+| `parseInlineReasoning` | `LLM_CHAT_PARSE_INLINE_REASONING` | `false` | Parse explicit inline reasoning markers in streamed content |
+| `inlineReasoningMarkers` | — | `<think>` / `</think>` | Marker pair used when `parseInlineReasoning` is enabled |
+| `parseInlineToolCalls` | `LLM_CHAT_PARSE_INLINE_TOOL_CALLS` | `false` | Parse explicit inline tool-call blocks in streamed content |
+| `inlineToolCallMarkers` | — | `<tool_call>` / `</tool_call>` | Marker pair used when `parseInlineToolCalls` is enabled |
 | `contextWindowSizeHint` | `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()`: the service does **not** enforce it automatically |
+
+Inline parsing is provider-independent and disabled by default. See
+[Inline reasoning](inline-reasoning.md) for reasoning marker semantics,
+cancellation and error behavior. See [Inline tool calls](inline-tool-calls.md)
+for payload shapes, execution and the finish-reason override.
 
 ## Eager initialisation
 
