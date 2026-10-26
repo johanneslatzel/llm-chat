@@ -15,7 +15,7 @@ Inline parsing lives on `ChatServiceConfiguration`, so it works for every
 provider, not only the OpenAI implementation.
 
 ```typescript
-import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
+import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
 
 const config = new ChatServiceConfiguration();
 config.parseInlineReasoning = true;
@@ -25,6 +25,11 @@ config.inlineReasoningMarkers = {
     open: "<think>",
     close: "</think>"
 };
+
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .withServiceConfig(config)
+    .create();
 ```
 
 | Property | Env var | Default | Description |

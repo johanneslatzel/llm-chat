@@ -173,6 +173,35 @@ describe('ChunkStream', () => {
     });
 
     describe('hook', () => {
+        it('narrows the callback to the filtered chunk type', () => {
+            const stream = new ChunkStream();
+            const texts: string[] = [];
+            stream
+                .hook()
+                .chunks(ChunkType.Content)
+                .do((chunk) => {
+                    texts.push(chunk.text);
+                });
+
+            stream.addContentChunk('Hello');
+            expect(texts).toEqual(['Hello']);
+        });
+
+        it('narrows the callback to a union of filtered chunk types', () => {
+            const stream = new ChunkStream();
+            const types: ChunkType[] = [];
+            stream
+                .hook()
+                .chunks(ChunkType.Content, ChunkType.Reasoning)
+                .do((chunk) => {
+                    types.push(chunk.type);
+                });
+
+            stream.addContentChunk('Hello');
+            stream.addReasoningChunk('Thinking');
+            expect(types).toEqual([ChunkType.Content, ChunkType.Reasoning]);
+        });
+
         it('fires content chunk hooks', () => {
             const stream = new ChunkStream();
             const handler = vi.fn();

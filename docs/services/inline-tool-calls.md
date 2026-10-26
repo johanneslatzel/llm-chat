@@ -12,7 +12,7 @@ calls in this format.
 ## Configuration
 
 ```typescript
-import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
+import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
 
 const config = new ChatServiceConfiguration();
 config.parseInlineToolCalls = true;
@@ -22,6 +22,11 @@ config.inlineToolCallMarkers = {
     open: "<tool_call>",
     close: "</tool_call>"
 };
+
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .withServiceConfig(config)
+    .create();
 ```
 
 | Property | Env var | Default | Description |

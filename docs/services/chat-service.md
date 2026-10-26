@@ -3,12 +3,18 @@
 `ChatService` handles the tool-call loop. It owns the chat instance and tool registry. Tools are registered via `service.tools().add(...)`:
 
 ```typescript
+import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
+
 const config = new ChatServiceConfiguration();
 config.maxToolCallRounds = 25;
 config.systemPromptDir = "./prompts";
 config.userPromptPaths = ["./context.md"];
 
-const service = new OpenAIChatService(api, openAIConfig, config);
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .withServiceConfig(config)
+    .create();
+
 const chat = service.chat();
 // ... setup messages ...
 await service.send();
@@ -26,7 +32,8 @@ The base class accumulates stream events, assembles tool calls, recurses on tool
 | `systemPromptDir` | `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory of `.md`/`.txt` system prompt files (read if it exists; never created) |
 | `userPromptPaths` | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
 | `hooksDir` | `LLM_CHAT_HOOKS_DIR` | unset | Directory containing `.json` hook definition files |
-| `systemPrompt` | — | unset | Flat string that overrides the system prompt tree entirely; file-based system prompts are skipped |
+| `systemPrompt` | `LLM_CHAT_SYSTEM_PROMPT` | unset | Flat string that overrides the system prompt tree entirely; file-based system prompts are skipped |
+| `systemPromptFile` | `LLM_CHAT_SYSTEM_PROMPT_FILE` | unset | Single file loaded as the flat system prompt; `systemPrompt` takes precedence |
 | `trimMessages` | — | `false` | Trim leading/trailing whitespace from assistant and reasoning content before storing |
 | `parseInlineReasoning` | `LLM_CHAT_PARSE_INLINE_REASONING` | `false` | Parse explicit inline reasoning markers in streamed content |
 | `inlineReasoningMarkers` | — | `<think>` / `</think>` | Marker pair used when `parseInlineReasoning` is enabled |
@@ -41,11 +48,13 @@ for payload shapes, execution and the finish-reason override.
 
 ## Eager initialisation
 
-By default, prompt files from `systemPromptDir` are loaded lazily on the first
-`send()`. Call `init()` to load them upfront, allowing inspection or display of
-the full system prompt (e.g. a `/system` command). When a flat
-`systemPrompt` is set, the system prompt files are skipped; user prompt files
-and JSON hooks still load.
+By default, prompt files from `systemPromptDir` or a configured
+`systemPromptFile` are loaded lazily on the first `send()`. Call `init()` to
+load them upfront, allowing inspection or display of the full system prompt
+(e.g. a `/system` command). `systemPrompt` takes precedence over
+`systemPromptFile`, which takes precedence over `systemPromptDir`. When a flat
+`systemPrompt` is set, both file-based system prompts are skipped; user prompt
+files and JSON hooks still load.
 
 ```typescript
 await service.init();
@@ -189,7 +198,11 @@ exceeds the configured value.
 ```typescript
 const config = new ChatServiceConfiguration();
 config.contextWindowSizeHint = 128_000; // 128k tokens
-const service = new OpenAIChatService(api, openAIConfig, config);
+
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .withServiceConfig(config)
+    .create();
 
 // later, before send():
 if (await service.isContextWindowExceeded()) {

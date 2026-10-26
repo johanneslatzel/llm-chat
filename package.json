@@ -1,7 +1,7 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.9.0",
-    "description": "LLM conversation package focused on LM Studio local models",
+    "version": "0.10.0",
+    "description": "TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-compatible APIs",
     "license": "MIT",
     "sideEffects": false,
     "files": [
@@ -21,14 +21,16 @@
     "keywords": [
         "llm",
         "chat",
+        "agents",
         "openai",
+        "openai-compatible",
         "typescript",
         "streaming",
-        "tools",
+        "tool-calls",
         "hooks"
     ],
     "engines": {
-        "node": ">=18"
+        "node": ">=22"
     },
     "publishConfig": {
         "access": "public"
@@ -53,6 +55,8 @@
         "clean:install": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify",
         "docs": "docker run --rm -it -p 8000:8000 -v $PWD:/docs squidfunk/mkdocs-material",
         "prepare": "husky",
+        "prebuild": "rm -rf dist/",
+        "prepack": "npm run build",
         "audit": "npm audit --audit-level=high",
         "check:lines": "check-line-limits",
         "check:mkdocs": "check-mkdocs"
@@ -66,7 +70,7 @@
     },
     "dependencies": {
         "async-mutex": "^0.5.0",
-        "openai": "^4.86.1"
+        "openai": "^7.43.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

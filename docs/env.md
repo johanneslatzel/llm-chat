@@ -38,7 +38,9 @@ Read at `OpenAIChatService` construction:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `LLM_CHAT_SYSTEM_PROMPT` | unset | Inline flat system prompt; wins over the file and directory sources |
 | `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general`. Read only if it exists; never created |
+| `LLM_CHAT_SYSTEM_PROMPT_FILE` | unset | Path to a single `.md` or `.txt` file used as the flat system prompt; takes precedence over `LLM_CHAT_SYSTEM_PROMPT_DIR` |
 | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
 
 ## JSON hooks

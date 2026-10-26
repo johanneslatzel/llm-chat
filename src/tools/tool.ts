@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
 import { ToolParameters } from './parameter.js';
 import { PartialToolResult, ResultStatus, ToolResult } from './result.js';
 
@@ -72,8 +72,8 @@ export abstract class Tool {
         }
     }
 
-    /** Converts this tool to an OpenAI ChatCompletionTool definition. */
-    public toOpenAI(): OpenAI.Chat.Completions.ChatCompletionTool {
+    /** Converts this tool to an OpenAI function-tool definition. */
+    public toOpenAI(): ChatCompletionFunctionTool {
         return {
             type: 'function',
             function: {

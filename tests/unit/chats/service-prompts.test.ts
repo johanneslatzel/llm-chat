@@ -195,6 +195,96 @@ describe('ChatService prompts and lifecycle', () => {
                 removeTempDir(tmpDir);
             }
         });
+
+        it('loads a single system prompt file', async () => {
+            const tmpDir = createTempDir();
+            try {
+                const filePath = path.join(tmpDir, 'AGENTS.md');
+                createTempFile(tmpDir, 'AGENTS.md', '# AGENTS\nBe concise.');
+                config.systemPromptFile = filePath;
+
+                const service = new TestChatService([], config);
+                await service.init();
+
+                expect(service.chatImpl.getSystem()!.content).toBe('# AGENTS\nBe concise.');
+                expect(service.chatImpl.system().child('general').hasContent()).toBe(false);
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('gives systemPrompt precedence over systemPromptFile', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'AGENTS.md', 'From file');
+                config.systemPrompt = 'From config';
+                config.systemPromptFile = path.join(tmpDir, 'AGENTS.md');
+
+                const service = new TestChatService([], config);
+                await service.loadPromptFiles();
+
+                expect(service.chatImpl.getSystem()!.content).toBe('From config');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('throws when the system prompt file is missing', async () => {
+            const tmpDir = createTempDir();
+            try {
+                config.systemPromptFile = path.join(tmpDir, 'missing.md');
+                const service = new TestChatService([], config);
+
+                await expect(service.init()).rejects.toThrow('Failed to load system prompt file');
+                await expect(service.init()).rejects.toThrow('Failed to load system prompt file');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('does nothing when no system prompt file is configured', async () => {
+            const service = new TestChatService([], config);
+            await expect((service as any).loadSystemPromptFile()).resolves.toBeUndefined();
+        });
+
+        it('reloads the system prompt file with loadPromptFiles', async () => {
+            const tmpDir = createTempDir();
+            try {
+                const filePath = path.join(tmpDir, 'AGENTS.md');
+                createTempFile(tmpDir, 'AGENTS.md', 'First version');
+                config.systemPromptFile = filePath;
+
+                const service = new TestChatService([], config);
+                await service.loadPromptFiles();
+                expect(service.chatImpl.getSystem()!.content).toBe('First version');
+
+                createTempFile(tmpDir, 'AGENTS.md', 'Second version');
+                await service.loadPromptFiles();
+                expect(service.chatImpl.getSystem()!.content).toBe('Second version');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
+
+        it('reloads the system prompt file after clear', async () => {
+            const tmpDir = createTempDir();
+            try {
+                createTempFile(tmpDir, 'AGENTS.md', 'Persistent prompt');
+                config.systemPromptFile = path.join(tmpDir, 'AGENTS.md');
+
+                const service = new TestChatService([], config);
+                await service.init();
+                expect(service.chatImpl.getSystem()!.content).toBe('Persistent prompt');
+
+                service.clear();
+                expect(service.chatImpl.getSystem()).toBeNull();
+
+                await service.init();
+                expect(service.chatImpl.getSystem()!.content).toBe('Persistent prompt');
+            } finally {
+                removeTempDir(tmpDir);
+            }
+        });
     });
 
     describe('stream ending without finish event', () => {

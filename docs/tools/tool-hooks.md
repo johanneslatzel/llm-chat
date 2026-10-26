@@ -7,7 +7,9 @@ The tool suite exposes a `.hook()` method that returns a builder with `.before()
 Use `.filter(...names)` to restrict which tools fire the hook:
 
 ```typescript
-const service = new OpenAIChatService();
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .create();
 
 // fires for ALL tools
 service.tools().hook().before().do((name, args) => {
@@ -24,6 +26,8 @@ service.tools().hook().error().do((name, error) => console.error(`Failed: ${erro
 ```
 
 Each returns a `Hook`; call `.dispose()` to unsubscribe. Async handlers in `do()` are awaited before tool execution proceeds (before-hooks) or before the next result is processed (after-hooks).
+
+`after()` hooks fire only for successful results; failed tool calls fire `error()` hooks instead.
 
 `service.tools().clear()` unregisters all tool event listeners alongside
 removing registered tools. Pass `retainHooks: true` to preserve listeners.

@@ -1,19 +1,38 @@
 # OpenAIChatService
 
-Works with any OpenAI-compatible API (OpenAI, LM Studio, etc.). Reasoning messages are stored locally but filtered out when sent to the API. Structured reasoning fields are recognised automatically; inline markers in content are parsed only when `ChatServiceConfiguration.parseInlineReasoning` is enabled.
+Works with any OpenAI-compatible API. Reasoning messages are stored locally but filtered out when sent to the API. Structured reasoning fields are recognised automatically; inline markers in content are parsed only when `ChatServiceConfiguration.parseInlineReasoning` is enabled.
 
 ```typescript
-const openAIConfig = new OpenAIChatServiceConfiguration();
-openAIConfig.model = "some-model";
-openAIConfig.temperature = 0.3;
-openAIConfig.maxTokens = 2048;
-openAIConfig.stop = ["\n\n"];
-openAIConfig.topP = 0.9;
+const service = OpenAIChatService.builder()
+    .model("some-model")
+    .temperature(0.3)
+    .maxTokens(2048)
+    .create();
 
-const service = new OpenAIChatService(api, openAIConfig, config);
 const chat = service.chat();
 await service.send();
 ```
+
+## Builder
+
+For the common case, use the fluent builder instead of constructing the
+configuration objects by hand:
+
+```typescript
+const service = OpenAIChatService.builder()
+    .model("some-model")
+    .systemPromptFile("AGENTS.md")
+    .create();
+```
+
+- `.model()`, `.temperature()`, `.maxTokens()`, and `.maxCompletionTokens()`
+  set common OpenAI options.
+- `.systemPrompt()` sets a flat system prompt string; `.systemPromptFile()`
+  loads the file content as that flat prompt during `init()` or the first
+  `send()`. The prompt tree is not used in either case.
+- `.withClient()` supplies a preconfigured OpenAI client.
+- `.withOpenAIConfig()` and `.withServiceConfig()` replace the underlying
+  configuration objects for advanced options.
 
 ## Configuration reference
 
@@ -39,10 +58,13 @@ Set `OpenAIChatServiceConfiguration.prefixWithTimestamp` to prepend each message
 
 ```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.model = "some-model";
 openAIConfig.prefixWithTimestamp = true;
 // each message is sent as: "2026-06-04T17:04:35.000+01:00: Hello"
 
-const service = new OpenAIChatService(api, openAIConfig);
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 ```
 
 Useful for giving the model temporal context about when each message was created.
@@ -53,27 +75,34 @@ For o-series models (o1, o3), OpenAI recommends using the `developer` role inste
 
 ```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.model = "some-model";
 openAIConfig.useDeveloperRole = true;
 // The system prompt is sent as { role: "developer" } instead of { role: "system" }
 
-const service = new OpenAIChatService(api, openAIConfig);
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 ```
 
 There are no dedicated `developer()` or `system()` message methods on `chat` or `queue`; the system prompt tree is accessed via `chat.system()`, and it is automatically converted to the `developer` role when `useDeveloperRole` is enabled.
 
 ## Flat system prompt
 
-Set `ChatServiceConfiguration.systemPrompt` to bypass the prompt tree entirely and send a single flat string:
+Set `ChatServiceConfiguration.systemPrompt` (env `LLM_CHAT_SYSTEM_PROMPT`), or
+use `builder.systemPrompt()`, to bypass the prompt tree entirely and send a
+single flat string. Use `systemPromptFile` (env
+`LLM_CHAT_SYSTEM_PROMPT_FILE`) or `builder.systemPromptFile()` to load that
+string from a file.
 
 ```typescript
-const config = new ChatServiceConfiguration();
-config.systemPrompt = "You are a helpful assistant.";
-
-const service = new OpenAIChatService(api, openAIConfig, config);
+const service = OpenAIChatService.builder()
+    .model("some-model")
+    .systemPrompt("You are a helpful assistant.")
+    .create();
 // sends: { role: "system", content: "You are a helpful assistant." }
 ```
 
-While set, file-based system prompts are not loaded, `chat.getSystem()` returns the flat string, and it is sent instead of the prompt tree. When `useDeveloperRole` is enabled, the flat system prompt is sent with the `developer` role.
+While set, file-based system prompts are not loaded, `chat.getSystem()` returns the flat string, and it is sent instead of the prompt tree. When `useDeveloperRole` is enabled, the flat system prompt is sent with the `developer` role. Set `LLM_CHAT_SYSTEM_PROMPT` to use the flat prompt via env.
 
 ## Token usage
 
@@ -83,10 +112,12 @@ Streamed token usage is opt-in because some OpenAI-compatible servers reject the
 
 ```typescript
 const openAIConfig = new OpenAIChatServiceConfiguration();
-openAIConfig.includeUsage = true;
 openAIConfig.model = "some-model";
+openAIConfig.includeUsage = true;
 
-const service = new OpenAIChatService(api, openAIConfig, config);
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 
 // One StreamSummary is recorded per provider round, and summaries accumulate
 // across send() calls. Clear them to isolate the next request.
@@ -116,10 +147,19 @@ when the server did not send usage.
 Control how much reasoning the model performs (o-series models only). Uses the `ReasoningEffort` enum:
 
 ```typescript
-import { ReasoningEffort } from "@johannes.latzel/llm-chat";
+import {
+    OpenAIChatService,
+    OpenAIChatServiceConfiguration,
+    ReasoningEffort
+} from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.model = "some-model";
 openAIConfig.reasoningEffort = ReasoningEffort.High;
+
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 ```
 
 | Value | Description |
@@ -172,11 +212,20 @@ coexist, but they are not deduplicated.
 Control whether the model should call tools. Uses the `ToolChoice` enum:
 
 ```typescript
-import { ToolChoice } from "@johannes.latzel/llm-chat";
+import {
+    OpenAIChatService,
+    OpenAIChatServiceConfiguration,
+    ToolChoice
+} from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.model = "some-model";
 openAIConfig.toolChoice = ToolChoice.Required;
 // Forces the model to call one or more tools
+
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 ```
 
 | Value | Description |
@@ -190,10 +239,19 @@ openAIConfig.toolChoice = ToolChoice.Required;
 Some providers support a verbosity parameter to control response detail:
 
 ```typescript
-import { Verbosity } from "@johannes.latzel/llm-chat";
+import {
+    OpenAIChatService,
+    OpenAIChatServiceConfiguration,
+    Verbosity
+} from "@johannes.latzel/llm-chat";
 
 const openAIConfig = new OpenAIChatServiceConfiguration();
+openAIConfig.model = "some-model";
 openAIConfig.verbosity = Verbosity.High;
+
+const service = OpenAIChatService.builder()
+    .withOpenAIConfig(openAIConfig)
+    .create();
 ```
 
 | Value | Description |

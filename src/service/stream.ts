@@ -146,18 +146,28 @@ export class ChunkStream implements ChunkStreamInterface {
     }
 }
 
+/** Chunk object for a specific {@link ChunkType}. */
+export type ChunkOfType<T extends ChunkType> = Extract<Chunk, { type: T }>;
+
 /** Entry point for building stream chunk hooks. Created by {@link ChunkStreamInterface.hook}. */
 export class StreamHookBuilder {
     constructor(private _stream: ChunkStream) {}
 
-    /** Build a chunk hook, optionally filtered by chunk types. */
-    chunks(...types: ChunkType[]): StreamChunkFilterBuilder {
-        return new StreamChunkFilterBuilder(this._stream, types);
+    /** Build a chunk hook, optionally filtered by chunk types. The callback
+     *  type narrows to the selected chunk type or union of types. */
+    chunks<T extends ChunkType[]>(
+        ...types: T
+    ): StreamChunkFilterBuilder<T['length'] extends 0 ? Chunk : ChunkOfType<T[number]>> {
+        return new StreamChunkFilterBuilder(this._stream, types) as StreamChunkFilterBuilder<
+            T['length'] extends 0 ? Chunk : ChunkOfType<T[number]>
+        >;
     }
 }
 
 /** Builder that configures and registers a stream chunk hook with optional chunk-type filtering. */
-export class StreamChunkFilterBuilder extends HookBuilderBase<(chunk: Chunk) => void> {
+export class StreamChunkFilterBuilder<TChunk extends Chunk = Chunk> extends HookBuilderBase<
+    (chunk: TChunk) => void
+> {
     constructor(
         private _stream: ChunkStream,
         private _types: ChunkType[]
@@ -166,8 +176,8 @@ export class StreamChunkFilterBuilder extends HookBuilderBase<(chunk: Chunk) => 
     }
 
     /** Register the hook. The callback receives each matching chunk. */
-    do(callback: (chunk: Chunk) => void): Hook {
-        return new StreamChunkHook(this._stream, this._types, callback);
+    do(callback: (chunk: TChunk) => void): Hook {
+        return new StreamChunkHook(this._stream, this._types, callback as (chunk: Chunk) => void);
     }
 }
 

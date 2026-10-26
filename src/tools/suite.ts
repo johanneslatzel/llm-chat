@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
 import { Tool } from './tool.js';
 import { ResultStatus, ToolResult } from './result.js';
 import { ToolPackage } from './package.js';
@@ -81,7 +81,7 @@ export class ToolSuite implements ToolEventTarget {
         }
     }
 
-    getTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    getTools(): ChatCompletionFunctionTool[] {
         return Object.values(this.#tools).map((tool) => tool.toOpenAI());
     }
 

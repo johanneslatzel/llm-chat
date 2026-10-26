@@ -20,7 +20,9 @@ class GreetTool extends Tool {
     }
 }
 
-const service = new OpenAIChatService();
+const service = OpenAIChatService.builder()
+    .model("your-model")
+    .create();
 service.tools().add(new GreetTool());
 ```
 

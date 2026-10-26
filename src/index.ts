@@ -37,11 +37,11 @@ export {
     ToolChoice,
     Verbosity
 } from './service/config.js';
-export { OpenAIChatService } from './service/openai.js';
+export { OpenAIChatService, OpenAIChatServiceBuilder } from './service/openai.js';
 export { Hook } from './hooks/hook.js';
 export { HookBuilderBase, type HasHooks } from './hooks/hook-builder.js';
 export { ChunkType } from './service/stream-types.js';
-export { StreamHookBuilder, StreamChunkFilterBuilder } from './service/stream.js';
+export { StreamHookBuilder, StreamChunkFilterBuilder, type ChunkOfType } from './service/stream.js';
 export type {
     Chunk,
     ContentChunk,

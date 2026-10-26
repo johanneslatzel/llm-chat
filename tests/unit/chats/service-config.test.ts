@@ -39,6 +39,25 @@ describe('ChatServiceConfiguration', () => {
         expect(c.hooksDir).toBeUndefined();
     });
 
+    it('systemPromptFile defaults to undefined', () => {
+        const c = new ChatServiceConfiguration();
+        expect(c.systemPromptFile).toBeUndefined();
+    });
+
+    it('reads a flat systemPrompt from env', () => {
+        vi.stubEnv('LLM_CHAT_SYSTEM_PROMPT', 'You are a flat assistant.');
+        const c = new ChatServiceConfiguration();
+        expect(c.systemPrompt).toBe('You are a flat assistant.');
+        vi.unstubAllEnvs();
+    });
+
+    it('reads systemPromptFile from env', () => {
+        vi.stubEnv('LLM_CHAT_SYSTEM_PROMPT_FILE', '/tmp/AGENTS.md');
+        const c = new ChatServiceConfiguration();
+        expect(c.systemPromptFile).toBe('/tmp/AGENTS.md');
+        vi.unstubAllEnvs();
+    });
+
     it('hooksDir setter stores value', () => {
         const c = new ChatServiceConfiguration();
         c.hooksDir = './my-hooks';

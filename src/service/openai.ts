@@ -87,6 +87,11 @@ function toOpenAIMessages(
 
 /** OpenAI provider implementation of {@link ChatService}. */
 export class OpenAIChatService extends ChatService {
+    /** Create a fluent builder for a new service. */
+    static builder(): OpenAIChatServiceBuilder {
+        return new OpenAIChatServiceBuilder();
+    }
+
     constructor(
         private api: OpenAI = new OpenAI(),
         private openAIConfig: OpenAIChatServiceConfiguration = new OpenAIChatServiceConfiguration(),
@@ -218,5 +223,74 @@ export class OpenAIChatService extends ChatService {
         if (finishReason !== null) {
             yield { type: StreamEventType.Finish, reason: finishReason };
         }
+    }
+}
+
+/** Fluent builder for {@link OpenAIChatService}. */
+export class OpenAIChatServiceBuilder {
+    private _api: OpenAI | undefined;
+    private _openAIConfig = new OpenAIChatServiceConfiguration();
+    private _serviceConfig = new ChatServiceConfiguration();
+
+    /** Set the model name sent to the API. */
+    model(model: string): this {
+        this._openAIConfig.model = model;
+        return this;
+    }
+
+    /** Set the sampling temperature. */
+    temperature(value: number): this {
+        this._openAIConfig.temperature = value;
+        return this;
+    }
+
+    /** Set the legacy `max_tokens` limit. */
+    maxTokens(value: number): this {
+        this._openAIConfig.maxTokens = value;
+        return this;
+    }
+
+    /** Set the `max_completion_tokens` limit for reasoning models. */
+    maxCompletionTokens(value: number): this {
+        this._openAIConfig.maxCompletionTokens = value;
+        return this;
+    }
+
+    /** Set a flat system prompt. Overrides any previously configured file. */
+    systemPrompt(content: string): this {
+        this._serviceConfig.systemPrompt = content;
+        delete this._serviceConfig.systemPromptFile;
+        return this;
+    }
+
+    /** Load the system prompt from a file during {@link ChatService.init}.
+     *  Overrides any previously configured flat prompt. */
+    systemPromptFile(path: string): this {
+        this._serviceConfig.systemPromptFile = path;
+        delete this._serviceConfig.systemPrompt;
+        return this;
+    }
+
+    /** Use a preconfigured OpenAI client, for custom endpoints or tests. */
+    withClient(api: OpenAI): this {
+        this._api = api;
+        return this;
+    }
+
+    /** Replace the OpenAI configuration. */
+    withOpenAIConfig(config: OpenAIChatServiceConfiguration): this {
+        this._openAIConfig = config;
+        return this;
+    }
+
+    /** Replace the chat-service configuration. */
+    withServiceConfig(config: ChatServiceConfiguration): this {
+        this._serviceConfig = config;
+        return this;
+    }
+
+    /** Create the service. */
+    create(): OpenAIChatService {
+        return new OpenAIChatService(this._api, this._openAIConfig, this._serviceConfig);
     }
 }

@@ -8,11 +8,19 @@
 
 ## System prompt
 
-The system prompt is built from a tree of components via `chat.system()`, which
-returns the root `PromptContainer`. To bypass the tree entirely and send a
-single flat string, set `ChatServiceConfiguration.systemPrompt`; `chat.getSystem()`
-then returns that string while `chat.system()` still exposes the tree. See
-[Flat system prompt](../services/openai.md#flat-system-prompt).
+The system prompt can be supplied in three ways. When several sources are
+configured at once, flat strings win over files, which win over the prompt tree.
+
+- **Flat string**: `ChatServiceConfiguration.systemPrompt` (env
+  `LLM_CHAT_SYSTEM_PROMPT`) or `OpenAIChatService.builder().systemPrompt(...)`.
+  It bypasses the tree entirely.
+- **File**: `systemPromptFile` (env `LLM_CHAT_SYSTEM_PROMPT_FILE`) or
+  `.systemPromptFile("AGENTS.md")`. The file content is used as the flat prompt.
+- **Tree**: build components with `chat.system()`, or load `.md`/`.txt` files
+  from a directory via `systemPromptDir` (env `LLM_CHAT_SYSTEM_PROMPT_DIR`).
+
+`chat.getSystem()` returns the effective system message, while `chat.system()`
+always exposes the tree. See [System prompts](../services/openai.md#flat-system-prompt).
 
 ![System prompt tree: chat.system() with general and tutorials containers, the general prompts, and numbered tool packages](../assets/llm-chat-system-prompt-tree.svg)
 
@@ -31,7 +39,7 @@ exists; it is never created and no default files are written.
 The system prompt is stored separately from the regular message list:
 
 - **`chat.messages()`**: returns only user, assistant, tool, and reasoning messages. The system message is **not** included.
-- **`chat.getSystem()`**: returns the effective system message: an override installed by the service (a flat `systemPrompt`) when configured, otherwise the composed prompt tree. `null` when neither yields content.
+- **`chat.getSystem()`**: returns the effective system message: a flat `systemPrompt` or `systemPromptFile` when configured, otherwise the composed prompt tree. `null` when neither yields content.
 
 When `service.send()` sends messages to the provider, the system prompt is always the first element.
 

@@ -66,8 +66,10 @@ export class ChatServiceConfiguration {
     set hooksDir(value: string | undefined) {
         this._hooksDir = value;
     }
-    /** When set, this flat string overrides the system prompt tree. File-based system prompts are not loaded while it is set, and the string is sent directly as the system (or developer) message instead of `chat.getSystem()`. */
-    systemPrompt?: string;
+    /** When set, this flat string overrides the system prompt tree. File-based system prompts are not loaded while it is set, and the string is sent directly as the system (or developer) message instead of `chat.getSystem()` (env: `LLM_CHAT_SYSTEM_PROMPT`). */
+    systemPrompt?: string = envOptionalString('LLM_CHAT_SYSTEM_PROMPT');
+    /** Path to a single `.md` or `.txt` file whose contents are used as the flat system prompt. `systemPrompt` takes precedence. The file is read during `init()` or the first `send()` (env: `LLM_CHAT_SYSTEM_PROMPT_FILE`). */
+    systemPromptFile?: string = envOptionalString('LLM_CHAT_SYSTEM_PROMPT_FILE');
     /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
     trimMessages?: boolean = false;
     /** Parse inline reasoning markers in streamed content (env: `LLM_CHAT_PARSE_INLINE_REASONING`, default: `false`). Disabled by default because marker text may be ordinary content for some models. */
@@ -95,6 +97,7 @@ export abstract class ChatService implements JsonHookControls {
     private _abortController: AbortController | null = null;
     private _messageQueue = new MessageQueue();
     private _needsResend = false;
+    private _systemPromptFromFile: string | undefined = undefined;
     /** The underlying chat instance. Access to read/write messages directly. */
     public readonly chatImpl: Chat = new Chat();
     /** Internal tool registry. */
@@ -108,16 +111,17 @@ export abstract class ChatService implements JsonHookControls {
         protected config: ChatServiceConfiguration = new ChatServiceConfiguration()
     ) {
         this._tools.setTutorialContainer(this.chatImpl.system().child('tutorials'));
-        this.chatImpl.setSystemResolver(() =>
-            this.config.systemPrompt
+        this.chatImpl.setSystemResolver(() => {
+            const content = this.config.systemPrompt ?? this._systemPromptFromFile;
+            return content
                 ? {
                       role: ChatRole.System,
-                      content: this.config.systemPrompt,
+                      content,
                       createdAt: new Date(),
                       origin: ChatMessageOrigin.System
                   }
-                : undefined
-        );
+                : undefined;
+        });
     }
 
     /** Access the tool registry to register tools before calling {@link send}. */
@@ -272,6 +276,7 @@ export abstract class ChatService implements JsonHookControls {
         this.chatImpl.clear();
         this._tools.clear();
         this.resetTutorials();
+        this._systemPromptFromFile = undefined;
         this._contextLoaded = false;
     }
 
@@ -374,6 +379,21 @@ export abstract class ChatService implements JsonHookControls {
         }
     }
 
+    /** Load the flat system prompt from `config.systemPromptFile`. The file
+     *  content is used directly as the system message; the prompt tree is not
+     *  touched. Throws when the configured file cannot be read. */
+    private async loadSystemPromptFile(): Promise<void> {
+        this._systemPromptFromFile = undefined;
+        const file = this.config.systemPromptFile;
+        if (!file) return;
+        const absPath = path.resolve(process.cwd(), file);
+        try {
+            this._systemPromptFromFile = await readFile(absPath, 'utf-8');
+        } catch (err) {
+            throw new Error(`Failed to load system prompt file: ${absPath}`, { cause: err });
+        }
+    }
+
     /** Load user prompt files configured in `config.userPromptPaths` as user messages. */
     private async loadUserPromptFiles(): Promise<void> {
         for (const relPath of this.config.userPromptPaths) {
@@ -387,29 +407,41 @@ export abstract class ChatService implements JsonHookControls {
         }
     }
 
-    /** Load or reload prompt files from `config.systemPromptDir` into the
-     *  `general` container, and load user prompt files configured in
-     *  `config.userPromptPaths`. Safe to call multiple times: clears and
-     *  re-reads the `general` container. */
+    /** Load or reload prompt files. A flat `systemPrompt` wins over
+     *  `systemPromptFile`, and `systemPromptFile` wins over `systemPromptDir`.
+     *  User prompt files from `config.userPromptPaths` are loaded as user
+     *  messages. Safe to call multiple times. */
     async loadPromptFiles(): Promise<void> {
-        await this.loadSystemPromptFiles();
+        if (this.config.systemPrompt) {
+            this._systemPromptFromFile = undefined;
+        } else if (this.config.systemPromptFile) {
+            await this.loadSystemPromptFile();
+        } else {
+            this._systemPromptFromFile = undefined;
+            await this.loadSystemPromptFiles();
+        }
         await this.loadUserPromptFiles();
     }
 
     /** Eagerly load prompt files and mark the context as loaded.
      *  Idempotent: subsequent calls are no-ops. Call this before the first
      *  {@link send} to resolve the full system prompt upfront, allowing
-     *  callers to inspect or display it (e.g. a `/system` command). When a flat
-     *  {@link ChatServiceConfiguration.systemPrompt} is configured, file-based
-     *  system prompts are skipped. */
+     *  callers to inspect or display it (e.g. a `/system` command). A flat
+     *  {@link ChatServiceConfiguration.systemPrompt} overrides
+     *  {@link ChatServiceConfiguration.systemPromptFile}, which overrides
+     *  `systemPromptDir`. */
     async init(): Promise<void> {
         if (this._contextLoaded) return;
-        this._contextLoaded = true;
         if (!this.config.systemPrompt) {
-            await this.loadSystemPromptFiles();
+            if (this.config.systemPromptFile) {
+                await this.loadSystemPromptFile();
+            } else {
+                await this.loadSystemPromptFiles();
+            }
         }
         await this.loadUserPromptFiles();
         await this.loadJsonHooks();
+        this._contextLoaded = true;
     }
 
     /** Re-wire the tutorial container and rebuild tutorial entries after
