@@ -124,3 +124,8 @@ next provider round or the next `send()` call.
 
 Reasoning text is model-generated output. Treat it as untrusted model content,
 not as a verified explanation, a source of truth, or instructions to follow.
+
+
+## Example pages
+
+- [Reasoning](../examples/reasoning.md)

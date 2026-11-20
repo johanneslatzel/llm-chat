@@ -1,10 +1,22 @@
 <a id="readme-top"></a>
 
-<h1 align="center">LLM Chat <em>(@johannes.latzel/llm-chat)</em></h1>
+<h1 align="center">@johannes.latzel/llm-chat</h1>
 
 <p align="center">
 TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-compatible APIs
 </p>
+
+```mermaid
+flowchart TD
+    accTitle: llm-chat architecture overview
+    accDescr: An application uses OpenAIChatService, a ChatService subclass that owns a Chat, a ChunkStream and a ToolSuite, each carrying hook points, and that calls an OpenAI-compatible API over HTTP.
+    app["Application"] -->|"uses"| oai["OpenAIChatService"]
+    oai -->|"extends"| svc["ChatService<br/>abstract · hooks"]
+    svc --> chat["Chat<br/>hooks"]
+    svc --> stream["ChunkStream<br/>hooks"]
+    svc --> tools["ToolSuite<br/>hooks"]
+    oai -->|"HTTP"| api["OpenAI-compatible API"]
+```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![NPM](https://nodei.co/npm/@johannes.latzel/llm-chat.svg?style=shields&data=n,v,u,d,s)](https://www.npmjs.com/package/@johannes.latzel/llm-chat)
@@ -37,9 +49,10 @@ TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-co
 <details>
 <summary>Table of Contents</summary>
 
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
 - [Quick start](#quick-start)
-    - [Requirements](#requirements)
-    - [Installation](#installation)
     - [Configure](#configure)
     - [Stream a reply](#stream-a-reply)
     - [Loop a conversation](#loop-a-conversation)
@@ -60,15 +73,24 @@ TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-co
 - [Development](#development)
 - [Security](#security)
 - [Maintainer](#maintainer)
+- [License](#license)
 - [Contributing](#contributing)
 - [Ecosystem](#ecosystem)
-- [License](#license)
 
 </details>
 
-## Quick start
+## Features
 
-### Requirements
+- typed tool calls with validated parameters and structured results
+- streaming with typed chunk hooks
+- message, tool, stream, and service hooks
+- prompt trees built from flat strings, files, or directories
+- OpenAI-compatible endpoints, including local servers
+- structured output via JSON mode and JSON Schema
+- session persistence and interrupt/resume
+- two runtime dependencies: `openai` and `async-mutex`
+
+## Prerequisites
 
 | Requirement | Value |
 |---|---|
@@ -77,11 +99,13 @@ TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-co
 | API | OpenAI Chat Completions-compatible endpoint |
 | TypeScript | Optional; `.d.ts` files included |
 
-### Installation
+## Installation
 
 ```bash
 npm install @johannes.latzel/llm-chat
 ```
+
+## Quick start
 
 ### Configure
 
@@ -216,7 +240,7 @@ Set `LLM_CHAT_SYSTEM_PROMPT_FILE` to use it via env.
 
 ### Prompt tree
 
-![System prompt tree](https://raw.githubusercontent.com/johanneslatzel/llm-chat/main/docs/assets/llm-chat-system-prompt-tree.svg)
+![System prompt tree](docs/assets/llm-chat-system-prompt-tree.svg)
 
 Build the prompt tree programmatically:
 
@@ -348,9 +372,8 @@ const hook = service.stream().hook().chunks(ChunkType.Finish).do((chunk) => {
 ## Why llm-chat
 
 The OpenAI SDK handles the request. llm-chat adds the conversation loop around
-it:
-
-![LLM Chat architecture](https://raw.githubusercontent.com/johanneslatzel/llm-chat/main/docs/assets/llm-chat-architecture.svg)
+it. See the [architecture overview](docs/architecture.md#overview) for the
+full figure.
 
 - **Typed tool schemas** with nested objects, arrays, hidden aliases, and
   required-parameter validation.
@@ -396,9 +419,12 @@ without adopting an agent framework.
 
 - Use the **raw OpenAI SDK** for single requests or when you only need
   transport.
-- Use **Vercel AI SDK** when you want React/Next.js UI streaming hooks.
-- Use **LangChain** when you need a large catalog of integrations and
-  vector-store abstractions.
+- Use **Vercel AI SDK** when you need multi-provider model access,
+  structured output, or streaming UI hooks across React, Next.js, Vue,
+  Svelte, or Angular.
+- Use **LangChain** when you need an agent framework with broad
+  integrations, RAG and vector-store abstractions, or LangGraph for
+  stateful orchestration.
 
 [Back to top](#readme-top)
 
@@ -453,7 +479,16 @@ Some OpenAI-compatible servers reject streamed token usage. Leave
 
 ### Guides
 
+- [Examples](https://johanneslatzel.github.io/llm-chat/examples/)
 - [Quick start](https://johanneslatzel.github.io/llm-chat/examples/quick-start/)
+- [Typed tools](https://johanneslatzel.github.io/llm-chat/examples/typed-tools/)
+- [Tool packages](https://johanneslatzel.github.io/llm-chat/examples/tool-packages/)
+- [Timed tools](https://johanneslatzel.github.io/llm-chat/examples/timed-tools/)
+- [Service hooks](https://johanneslatzel.github.io/llm-chat/examples/service-hooks/)
+- [Structured output](https://johanneslatzel.github.io/llm-chat/examples/structured-output/)
+- [Agent loop](https://johanneslatzel.github.io/llm-chat/examples/agent-loop/)
+- [Context management](https://johanneslatzel.github.io/llm-chat/examples/context-management/)
+- [Testing](https://johanneslatzel.github.io/llm-chat/examples/testing/)
 - [Building messages](https://johanneslatzel.github.io/llm-chat/chats/building-messages/)
 - [Defining tools](https://johanneslatzel.github.io/llm-chat/tools/defining-tools/)
 - [Tool packages](https://johanneslatzel.github.io/llm-chat/tools/packages/)
@@ -491,6 +526,11 @@ Do not open a public issue for a security problem.
 
 Johannes B. Latzel ([@johanneslatzel](https://github.com/johanneslatzel)).
 
+## License
+
+MIT © Johannes B. Latzel. See
+[LICENSE](https://github.com/johanneslatzel/llm-chat/blob/main/LICENSE).
+
 ## Contributing
 
 Issues and pull requests are welcome.
@@ -527,8 +567,3 @@ Use conventional commit messages.
 | [llm-chat-drawio](https://github.com/johanneslatzel/llm-chat-drawio) | [docs](https://johanneslatzel.github.io/llm-chat-drawio/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-drawio) | draw.io diagram tools |
 
 [Back to top](#readme-top)
-
-## License
-
-MIT © Johannes B. Latzel. See
-[LICENSE](https://github.com/johanneslatzel/llm-chat/blob/main/LICENSE).

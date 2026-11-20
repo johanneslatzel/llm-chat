@@ -16,7 +16,8 @@ The [`llm-chat-mcp`](https://github.com/johanneslatzel/llm-chat-mcp) package exp
 
 ## Navigation
 
-- **[Defining a tool](defining-tools.md)**
-- **[Registration](registration.md)**
-- **[Tool hooks](tool-hooks.md)**
-- **[Packages](packages.md)**
+- **[Defining a tool](defining-tools.md)**: declare parameters, descriptions, and nested schemas
+- **[Registration](registration.md)**: add tools to a service and inspect the registry
+- **[Tool hooks](tool-hooks.md)**: observe and rewrite tool calls and results
+- **[Timed tools](timed-tools.md)**: bound a tool call with a timeout and abort signal
+- **[Packages](packages.md)**: group tools into a reusable package

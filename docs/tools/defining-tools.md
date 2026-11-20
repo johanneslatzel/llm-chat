@@ -142,6 +142,7 @@ A tool can return several independent results in a single call by chaining them 
 
 ```typescript
 import { ResultBuilder } from "@johannes.latzel/llm-chat";
+import { readFile } from "node:fs/promises";
 
 protected async onExecute(args: Record<string, unknown>): Promise<PartialToolResult> {
     const builder = new ResultBuilder();
@@ -160,19 +161,19 @@ protected async onExecute(args: Record<string, unknown>): Promise<PartialToolRes
 }
 ```
 
-### Convenience: `from()` and `resolveAll()`
+Both `ResultBuilder.from(results)` and
+`ResultBuilder.resolveAll(promises: Promise<PartialToolResult>[])` turn many
+results into one chain: `from()` returns a pre-populated builder, while
+`resolveAll()` awaits the promises and returns the finished `PartialToolResult`
+head, so it needs no `build()` call. See
+[Typed Tools](../examples/typed-tools.md) for a full `from()` example.
 
-Given an array of results, use `ResultBuilder.from()`:
-
-```typescript
-const results = await Promise.all(paths.map(p => readFile(p, "utf-8")));
-return ResultBuilder.from(results).build();
-```
-
-Given an array of promises, `ResultBuilder.resolveAll()` combines `Promise.all` + `build()` in one step:
-
-```typescript
-return await ResultBuilder.resolveAll(paths.map(p => readFile(p, "utf-8")));
-```
 
 The `onExecute` signature stays `Promise<PartialToolResult>`; only multi-result tools opt in by using `ResultBuilder`. Tools that return a single result need no changes.
+
+
+## Example pages
+
+- [Tool Calling](../examples/tool-calling.md)
+- [Typed Tools](../examples/typed-tools.md)
+- [Timed Tools](../examples/timed-tools.md)

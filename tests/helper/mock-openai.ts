@@ -4,6 +4,7 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 
 export interface MockChunk {
     content?: string;
+    refusal?: string;
     reasoning_content?: string;
     reasoning?: string;
     reasoning_details?: Array<Record<string, unknown>>;
@@ -12,7 +13,7 @@ export interface MockChunk {
         id?: string;
         function?: { name?: string; arguments?: string };
     }>;
-    finish_reason?: 'stop' | 'tool_calls' | 'length' | null;
+    finish_reason?: 'stop' | 'tool_calls' | 'length' | 'content_filter' | null;
     usage?: ChatCompletionChunk['usage'];
     usageOnly?: boolean;
 }
@@ -37,6 +38,7 @@ export function createChunk(delta: MockChunk): ChatCompletionChunk {
         index: 0,
         delta: {
             content: delta.content ?? null,
+            ...(delta.refusal ? { refusal: delta.refusal } : {}),
             ...(delta.reasoning_content ? { reasoning_content: delta.reasoning_content } : {}),
             ...(delta.reasoning ? { reasoning: delta.reasoning } : {}),
             ...(delta.reasoning_details ? { reasoning_details: delta.reasoning_details } : {}),

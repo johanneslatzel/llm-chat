@@ -45,6 +45,14 @@ When `service.send()` sends messages to the provider, the system prompt is alway
 
 Every message is automatically timestamped with a `createdAt: Date` set at creation time and tagged with an `origin` field (`ChatMessageOrigin`) indicating whether it came from the user, the model, a tool, a hook, or the system prompt.
 
+| Value | Source |
+|-------|--------|
+| `User` | `chat.user()`, `queue().user()` |
+| `Model` | `chat.assistant()`, `chat.reasoning()` |
+| `Tool` | `chat.tool()`, `queue().tool()` |
+| `Hook` | Hook `queue-message` action |
+| `System` | System prompt via `chat.getSystem()` |
+
 ## Tutorial container
 
 The `tutorials` child container is populated automatically by `ToolSuite`.
@@ -162,3 +170,9 @@ Messages are still added to history while silent.
 
 To reset the entire service (chat, stream, tools, and JSON hooks) in one call,
 use `service.clear()`; see [ChatService](../services/chat-service.md).
+
+
+## Example pages
+
+- [Interactive Chat](../examples/interactive-chat.md)
+- [Persistence](../examples/persistence.md)

@@ -1,4 +1,5 @@
 import { envInt, envFloat, envString, envBool } from '../env.js';
+import type { ResponseFormat } from './response-format.js';
 
 /** How much reasoning effort the model should spend (for reasoning models like o3). */
 export enum ReasoningEffort {
@@ -60,7 +61,7 @@ export class OpenAIChatServiceConfiguration {
     })();
     /** Map system messages to the `developer` role (for o-series models). */
     useDeveloperRole?: boolean = false;
-    /** Strip reasoning/thinking content from the final output. */
+    /** Drop stored reasoning messages from outgoing requests when true (default: true). Reasoning remains stored in the chat history. */
     filterReasoning?: boolean = true;
     /** Prepend each message with an ISO timestamp. */
     prefixWithTimestamp?: boolean = false;
@@ -87,4 +88,6 @@ export class OpenAIChatServiceConfiguration {
     })();
     /** Request streamed token usage by sending `stream_options.include_usage` (env: `LLM_CHAT_OPENAI_INCLUDE_USAGE`, default: `false`). Some OpenAI-compatible servers reject unknown streaming options, so this is opt-in. */
     includeUsage?: boolean = envBool('LLM_CHAT_OPENAI_INCLUDE_USAGE', false);
+    /** Optional OpenAI-compatible response format. Omitted when undefined so servers that reject the field are unaffected. */
+    responseFormat?: ResponseFormat;
 }

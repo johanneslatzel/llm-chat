@@ -1,8 +1,6 @@
 # Stream hooks
 
-Stream hooks observe raw streaming output (content, reasoning, tool-call deltas, usage, finish). They are accessed through `service.stream().hook()`.
-
-![Stream hooks: attached via service.stream().hook().chunks(), for content, reasoning, tool_call_delta, usage and finish](../assets/llm-chat-hook-stream.svg)
+Stream hooks observe raw streaming output (content, reasoning, refusal, tool-call deltas, usage, finish). They are accessed through `service.stream().hook()`.
 
 ```typescript
 // content chunks
@@ -15,12 +13,17 @@ service.stream().hook().chunks(ChunkType.Reasoning).do((chunk) => {
     process.stdout.write(chunk.text);
 });
 
+// refusal chunks
+service.stream().hook().chunks(ChunkType.Refusal).do((chunk) => {
+    console.log(`Refused: ${chunk.text}`);
+});
+
 // tool call delta chunks
 service.stream().hook().chunks(ChunkType.ToolCallDelta).do((chunk) => {
     console.log(`Tool ${chunk.toolCallId}: ${chunk.text}`);
 });
 
-// usage chunk (emitted before the finish chunk when usage is requested)
+// usage chunk (emitted before the finish chunk when include_usage is enabled)
 service.stream().hook().chunks(ChunkType.Usage).do((chunk) => {
     console.log(`Tokens: ${chunk.usage.total_tokens}`);
 });
@@ -80,6 +83,7 @@ const summaries = service.stream().summary();
 // Each entry:
 //   .content: content text from that round
 //   .reasoning: reasoning text from that round
+//   .refusal: refusal text from that round, when the model declined
 //   .toolCallCount: number of tool calls invoked in that round
 //   .finishReason: why the round finished
 //   .usage: token usage, when the provider reports it
@@ -97,6 +101,11 @@ order and boundaries of reasoning segments; `StreamSummary.reasoning`
 concatenates them for the provider round. See
 [Inline reasoning](inline-reasoning.md).
 
+Refusal chunks carry the provider's refusal text. `StreamSummary.refusal`
+contains the text for the round. A response filtered by the provider ends with
+`FinishReason.ContentFilter`; `lastAssistantJson()` reports these cases as
+`StructuredOutputErrorReason.Refused` and `StructuredOutputErrorReason.Filtered`.
+
 When `parseInlineToolCalls` is enabled, a complete `<tool_call>` block produces
 a normal `ChunkType.ToolCallDelta` chunk and participates in the tool-call loop.
 See [Inline tool calls](inline-tool-calls.md).
@@ -104,3 +113,10 @@ See [Inline tool calls](inline-tool-calls.md).
 ## Ordering guarantee
 
 When the stream finishes, the `FinishChunk` is pushed to the stream (and stream hooks fire) **before** the completed message is appended to chat (and chat hooks fire). This means stream hooks see the finish before chat hooks see the resulting message.
+
+
+## Example pages
+
+- [Quick Start](../examples/quick-start.md)
+- [Usage And Cost](../examples/usage-and-cost.md)
+- [Hooks](../examples/hooks.md)

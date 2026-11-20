@@ -4,7 +4,7 @@ A typed TypeScript package for building LLM-powered chats with tool execution an
 
 ## Navigation
 
-- **[Examples](examples/index.md)**: quick start and tool examples
+- **[Examples](examples/index.md)**: runnable scripts for chats, tools, hooks, and sessions
 - **[Chats](chats/index.md)**: building messages, hooks, serialization
 - **[Services](services/index.md)**: OpenAI, tool-call loop, custom providers
 - **[Tools](tools/index.md)**: defining tools, registration, hooks

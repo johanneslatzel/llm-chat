@@ -38,3 +38,9 @@ if (tool) {
 ```
 
 Returns `undefined` if no tool with that name is registered.
+
+
+## Example pages
+
+- [Tool Calling](../examples/tool-calling.md)
+- [Tool Packages](../examples/tool-packages.md)

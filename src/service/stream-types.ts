@@ -6,6 +6,7 @@ import type { StreamHookBuilder } from './stream.js';
 export enum ChunkType {
     Content = 'content',
     Reasoning = 'reasoning',
+    Refusal = 'refusal',
     ToolCallDelta = 'tool_call_delta',
     Usage = 'usage',
     Finish = 'finish'
@@ -25,6 +26,8 @@ type TextChunk = ChunkBase & {
 export type ContentChunk = TextChunk & { type: ChunkType.Content };
 /** A chunk carrying reasoning / thinking text. */
 export type ReasoningChunk = TextChunk & { type: ChunkType.Reasoning };
+/** A chunk carrying a model refusal instead of a normal answer. */
+export type RefusalChunk = TextChunk & { type: ChunkType.Refusal };
 /** A chunk carrying a tool call delta (partial function name/arguments). */
 export type ToolCallDeltaChunk = TextChunk & {
     type: ChunkType.ToolCallDelta;
@@ -45,12 +48,14 @@ export type FinishChunk = ChunkBase & {
 };
 
 /** Union of all possible chunk types emitted during streaming. */
-export type Chunk = ContentChunk | ReasoningChunk | ToolCallDeltaChunk | UsageChunk | FinishChunk;
+export type Chunk =
+    ContentChunk | ReasoningChunk | RefusalChunk | ToolCallDeltaChunk | UsageChunk | FinishChunk;
 
 /** Aggregated summary of a completed stream (content, reasoning, tool calls, finish reason, usage). */
 export type StreamSummary = {
     content: string;
     reasoning: string;
+    refusal?: string;
     toolCallCount: number;
     finishReason: FinishReason;
     usage?: CompletionUsage;

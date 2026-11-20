@@ -1,60 +1,23 @@
 # HookMessageWriter
 
-## Background
-
-`Chat` hardcodes message origin per method (`user()` to `User`, `assistant()` to `Model`, etc.).
-Hooks that queue messages via the `queue-message` action need to set `origin: Hook`.
-
-## Interfaces
-
-Two separate interfaces keep the concerns apart:
-
-- **`MessageWriter`**: clean interface without origin params. Used by `Chat` and the public `service.queue()` API.
-- **`HookMessageWriter`**: same methods but with a required `origin` param. Used internally by hooks.
-
-`MessageQueue` implements both. Each method accepts an optional `origin`: when called via `MessageWriter` the caller omits it (default `User`/`Tool`), when called via `HookMessageWriter` the caller passes it explicitly (e.g. `ChatMessageOrigin.Hook`).
-
-## Wiring
-
-`JsonHookRegistry` receives a `HookMessageWriter` and a `JsonHookControls` object via constructor injection:
+Hooks that stage messages need to record where a message came from.
+`HookMessageWriter` is the hook-facing half of the message queue: it exposes the
+same append methods as `MessageWriter`, but each call takes an explicit
+`ChatMessageOrigin`.
 
 ```typescript
-constructor(
-    private _hookWriter?: HookMessageWriter,
-    private _controls?: JsonHookControls
-)
+await writer.user('Please clarify.', ChatMessageOrigin.Hook);
 ```
 
-`ChatService` passes `this._messageQueue` (as `HookMessageWriter`) and `this` (as `JsonHookControls`).
+A message written this way is queued and drained into the chat on the next
+`service.send()`, with its origin preserved. Message hooks skip messages with
+origin `Hook`, so a hook cannot re-trigger itself.
 
-`JsonHookControls` is a minimal interface replacing the old `JsonHookService`:
+Host code stages messages through `service.queue()`, which uses the default
+origin for each method. `ChatMessageOrigin` is exported from the package root;
+`HookMessageWriter` is not.
 
-```typescript
-export interface JsonHookControls {
-    setNeedsResend(): void;
-    interrupt(needsResend?: boolean): void;
-}
-```
+## See also
 
-## ChatMessageOrigin
-
-Every `ChatMessage` carries a required `origin` field:
-
-| Value | Source |
-|-------|--------|
-| `User` | `chat.user()`, `queue().user()` |
-| `Model` | `chat.assistant()`, `chat.reasoning()` |
-| `Tool` | `chat.tool()`, `queue().tool()` |
-| `Hook` | Hook `queue-message` action |
-| `System` | System prompt via `chat.getSystem()` |
-
-## Files
-
-| File | Role |
-|------|------|
-| `src/chat/types.ts` | `MessageWriter`, `HookMessageWriter`, `ChatMessageOrigin`, `ChatMessage.origin` |
-| `src/chat/chat.ts` | `Chat` implementation with per-method message origin |
-| `src/chat/queue.ts` | `MessageQueue` implements both writer interfaces |
-| `src/hooks/json-hooks.ts` | `JsonHookControls`, `JsonHookRegistry` accepts hook writer + controls |
-| `src/service/service.ts` | `ChatService` implements `JsonHookControls`, wires `MessageQueue` to registry |
-| `src/index.ts` | Public API exports (re-exports `MessageWriter`; `HookMessageWriter` and `JsonHookControls` stay internal) |
+- [Building messages](../chats/building-messages.md): message origins
+- [Hooks](index.md)

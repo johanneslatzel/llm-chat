@@ -1,4 +1,5 @@
 export { Tool } from './tools/tool.js';
+export { TimedTool, TimedToolNotificationKind } from './tools/tool-timeout.js';
 export {
     ToolParameters,
     ToolParameterProperty,
@@ -37,6 +38,19 @@ export {
     ToolChoice,
     Verbosity
 } from './service/config.js';
+export {
+    ResponseFormatType,
+    StructuredOutputError,
+    StructuredOutputErrorReason
+} from './service/response-format.js';
+export type {
+    JsonSchemaObject,
+    JsonSchemaResponseOptions,
+    ResponseFormat,
+    ResponseFormatJsonObject,
+    ResponseFormatJsonSchema,
+    ResponseFormatText
+} from './service/response-format.js';
 export { OpenAIChatService, OpenAIChatServiceBuilder } from './service/openai.js';
 export { Hook } from './hooks/hook.js';
 export { HookBuilderBase, type HasHooks } from './hooks/hook-builder.js';
@@ -46,6 +60,7 @@ export type {
     Chunk,
     ContentChunk,
     ReasoningChunk,
+    RefusalChunk,
     ToolCallDeltaChunk,
     UsageChunk,
     FinishChunk,

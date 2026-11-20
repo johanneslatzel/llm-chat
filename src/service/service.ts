@@ -6,6 +6,7 @@ import { envBool, envInt, envOptionalString, envString } from '../env.js';
 import { Chat } from '../chat/chat.js';
 import {
     ChatInterface,
+    ChatMessage,
     ChatMessageOrigin,
     ChatRole,
     FinishReason,
@@ -33,6 +34,7 @@ import {
     type InlineNormalizationOptions
 } from './inline-normalizer.js';
 import { StreamEventType, type StreamEvent } from './stream-events.js';
+import { StructuredOutputError, StructuredOutputErrorReason } from './response-format.js';
 
 export { StreamEventType };
 export type { StreamEvent };
@@ -106,6 +108,7 @@ export abstract class ChatService implements JsonHookControls {
     private _serviceListeners = new Map<string, Set<Function>>();
     private _sendReentrant = false;
     private _pendingReentrant = false;
+    private _initPromise: Promise<void> | null = null;
 
     protected constructor(
         protected config: ChatServiceConfiguration = new ChatServiceConfiguration()
@@ -205,15 +208,46 @@ export abstract class ChatService implements JsonHookControls {
     }
 
     /**
-     * Estimate the total token count for the full context that would be sent
-     * to the LLM on the next {@link send}. Includes the composed system prompt,
-     * all conversation messages, queued (not yet drained) messages, and
-     * serialized tool definitions.
+     * Whether a stored message is sent to the provider. Providers that drop
+     * messages (for example, reasoning content) override this hook so that
+     * {@link estimateTokens} stays consistent with {@link createStream}. The
+     * default implementation sends every message.
+     *
+     * @param _message - Message to check.
+     * @returns `true` when the message is part of the request.
+     */
+    protected shouldSendMessage(_message: ChatMessage): boolean {
+        return true;
+    }
+
+    /**
+     * Transform a message's content into the form sent to the provider.
+     * Providers that rewrite content (for example, by prefixing timestamps)
+     * override this hook so that {@link estimateTokens} matches the request.
+     *
+     * @param message - Message whose outgoing content is requested.
+     * @returns The content sent to the provider.
+     */
+    protected toOutgoingContent(message: ChatMessage): string {
+        return message.content;
+    }
+
+    /**
+     * Estimate the total token count for the context that would be sent to the
+     * LLM on the next {@link send}. Includes the composed system prompt, the
+     * stored and queued messages the provider will send (see
+     * {@link shouldSendMessage}), and serialized tool definitions.
+     *
+     * Prompt files are loaded via {@link init} when necessary, so file-based
+     * system prompts and user prompt files are included even before the first
+     * {@link send}.
      *
      * @param estimator - Optional token estimator strategy. Defaults to
      *                    {@link CharCountEstimator} (chars / 4).
      */
     async estimateTokens(estimator?: TokenEstimator): Promise<number> {
+        await this.init();
+
         const est = estimator ?? new CharCountEstimator();
         let total = 0;
 
@@ -223,24 +257,78 @@ export abstract class ChatService implements JsonHookControls {
         }
 
         for (const msg of this.chatImpl._rawMessages()) {
-            total += est.estimate(msg.content);
+            if (!this.shouldSendMessage(msg)) continue;
+            total += this._estimateMessage(est, msg);
         }
 
-        const queued = await this._messageQueue.messages();
-        for (const msg of queued) {
-            total += est.estimate(msg.content);
+        for (const msg of await this._messageQueue.messages()) {
+            if (!this.shouldSendMessage(msg)) continue;
+            total += this._estimateMessage(est, msg);
         }
 
         for (const tool of this._tools.getTools()) {
             total += est.estimate(JSON.stringify(tool));
         }
 
+        total += this.estimateRequestTokens(est);
+
         return total;
     }
 
     /**
-     * Check whether the estimated context token count exceeds the configured
+     * Estimate provider-specific request tokens that are not part of messages
+     * or tool definitions. The base implementation reserves nothing; providers
+     * that send additional structured request data override this hook.
+     *
+     * @param _estimator - Token estimator to use.
+     * @returns The additional request token estimate.
+     */
+    protected estimateRequestTokens(_estimator: TokenEstimator): number {
+        return 0;
+    }
+
+    /**
+     * Estimate the tokens contributed by one message, including the wire
+     * payloads sent alongside `content` (tool calls and tool-call IDs).
+     */
+    private _estimateMessage(est: TokenEstimator, msg: ChatMessage): number {
+        let total = est.estimate(this.toOutgoingContent(msg));
+        if (msg.role === ChatRole.Assistant && msg.tool_calls) {
+            total += est.estimate(JSON.stringify(msg.tool_calls));
+        }
+        if (msg.role === ChatRole.Tool && msg.tool_call_id) {
+            total += est.estimate(msg.tool_call_id);
+        }
+        return total;
+    }
+
+    /**
+     * Reserve output tokens for the proactive {@link isContextWindowExceeded}
+     * check only. The context window is shared by the prompt and the response,
+     * so a prompt-only check could pass a request that has no room left to
+     * answer. Providers with a configured completion limit override this; the
+     * base implementation reserves nothing. This reserve is intentionally not
+     * part of {@link estimateTokens}.
+     *
+     * This is a very loose upper bound: it reflects the provider's configured
+     * maximum completion budget, not a prediction of the actual response
+     * length. Models that usually answer far below that cap make the check
+     * fire earlier than necessary.
+     *
+     * @returns The completion token reserve.
+     */
+    protected estimateCompletionTokens(): number {
+        return 0;
+    }
+
+    /**
+     * Check whether the prompt plus the provider's output reserve exceeds the
+     * configured
      * {@link ChatServiceConfiguration.contextWindowSizeHint context window size hint}.
+     * The reserve exists only for this proactive check, so a request that
+     * would leave no room for the next response is caught before sending. It
+     * is a very loose upper bound (the configured maximum output), not an
+     * estimate of the actual response.
      * Returns `false` when the context window size is `0` (unlimited).
      *
      * @param estimator - Optional token estimator strategy. Defaults to
@@ -249,7 +337,7 @@ export abstract class ChatService implements JsonHookControls {
     async isContextWindowExceeded(estimator?: TokenEstimator): Promise<boolean> {
         const limit = this.config.contextWindowSizeHint;
         if (limit <= 0) return false;
-        return (await this.estimateTokens(estimator)) > limit;
+        return (await this.estimateTokens(estimator)) + this.estimateCompletionTokens() > limit;
     }
 
     /** Load or reload JSON hook files from the configured hooks directory. */
@@ -340,6 +428,74 @@ export abstract class ChatService implements JsonHookControls {
         });
     }
 
+    /**
+     * Return the content of the most recent assistant message, or `undefined`
+     * when the conversation has no assistant message yet.
+     */
+    lastAssistantContent(): string | undefined {
+        const messages = this.chatImpl.messages();
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+            const message = messages[index];
+            if (message !== undefined && message.role === ChatRole.Assistant) {
+                return message.content;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Parse the most recent assistant output as JSON.
+     *
+     * The latest provider round's content is preferred so a refusal or an empty
+     * final round does not silently fall back to an earlier assistant message.
+     * This method only parses JSON; it does not validate the value against a
+     * schema and does not retry or repair the request.
+     *
+     * The parsed value is cast to `T` unchecked: the caller declares the
+     * shape and is responsible for matching the schema it requested.
+     *
+     * @returns The parsed value, or `undefined` when no assistant content exists.
+     * @throws {StructuredOutputError} When the model refused, the response was
+     *   filtered or incomplete, or the content is not valid JSON.
+     */
+    lastAssistantJson<T = unknown>(): T | undefined {
+        const latest = this._chunkStream.summary().at(-1);
+        if (latest?.refusal !== undefined) {
+            throw new StructuredOutputError(
+                StructuredOutputErrorReason.Refused,
+                'The model refused the request'
+            );
+        }
+        if (latest?.finishReason === FinishReason.ContentFilter) {
+            throw new StructuredOutputError(
+                StructuredOutputErrorReason.Filtered,
+                'The response was filtered'
+            );
+        }
+        if (
+            latest?.finishReason === FinishReason.Length ||
+            latest?.finishReason === FinishReason.Aborted
+        ) {
+            throw new StructuredOutputError(
+                StructuredOutputErrorReason.Incomplete,
+                'The response ended before valid structured output was complete'
+            );
+        }
+        const content = latest?.content ?? this.lastAssistantContent();
+        if (content === undefined || content.trim().length === 0) {
+            return undefined;
+        }
+        try {
+            return JSON.parse(content) as T;
+        } catch (cause) {
+            throw new StructuredOutputError(
+                StructuredOutputErrorReason.InvalidJson,
+                'The last assistant message is not valid JSON',
+                { cause }
+            );
+        }
+    }
+
     /** Drain the message queue into chat history. */
     private async _drainQueue(): Promise<void> {
         const queued = await this._messageQueue.drain();
@@ -424,7 +580,8 @@ export abstract class ChatService implements JsonHookControls {
     }
 
     /** Eagerly load prompt files and mark the context as loaded.
-     *  Idempotent: subsequent calls are no-ops. Call this before the first
+     *  Idempotent and safe to call concurrently: the first call performs the
+     *  work and later calls await the same promise. Call this before the first
      *  {@link send} to resolve the full system prompt upfront, allowing
      *  callers to inspect or display it (e.g. a `/system` command). A flat
      *  {@link ChatServiceConfiguration.systemPrompt} overrides
@@ -432,6 +589,14 @@ export abstract class ChatService implements JsonHookControls {
      *  `systemPromptDir`. */
     async init(): Promise<void> {
         if (this._contextLoaded) return;
+        this._initPromise ??= this._loadContext().finally(() => {
+            this._initPromise = null;
+        });
+        await this._initPromise;
+    }
+
+    /** Load prompt files and JSON hooks, then mark the context as loaded. */
+    private async _loadContext(): Promise<void> {
         if (!this.config.systemPrompt) {
             if (this.config.systemPromptFile) {
                 await this.loadSystemPromptFile();
@@ -480,6 +645,7 @@ export abstract class ChatService implements JsonHookControls {
     private async sendLoop(iteration: number): Promise<void> {
         let content = '';
         let reasoningContent = '';
+        let refusalContent = '';
         let inlineToolCallsDetected = false;
         let usage: CompletionUsage | undefined;
         const toolCallAccumulators = new Map<
@@ -532,6 +698,7 @@ export abstract class ChatService implements JsonHookControls {
                         await this.handleFinish(
                             content,
                             reasoningContent,
+                            refusalContent,
                             toolCallAccumulators,
                             reason,
                             iteration,
@@ -544,6 +711,11 @@ export abstract class ChatService implements JsonHookControls {
                         reasoningContent += event.text;
                         this._chunkStream.addReasoningChunk(event.text);
                         break;
+
+                    case StreamEventType.Refusal:
+                        refusalContent += event.text;
+                        this._chunkStream.addRefusalChunk(event.text);
+                        break;
                 }
             }
         } catch (err) {
@@ -552,6 +724,7 @@ export abstract class ChatService implements JsonHookControls {
                 this._chunkStream.addSummary({
                     content,
                     reasoning: reasoningContent,
+                    ...(refusalContent ? { refusal: refusalContent } : {}),
                     toolCallCount: toolCallAccumulators.size,
                     finishReason: FinishReason.Aborted,
                     ...(usage ? { usage } : {}),
@@ -564,12 +737,13 @@ export abstract class ChatService implements JsonHookControls {
 
         // Stream ended without an explicit Finish event
         const hasToolCalls = toolCallAccumulators.size > 0;
-        if (content || reasoningContent || hasToolCalls) {
+        if (content || reasoningContent || refusalContent || hasToolCalls) {
             const reason = hasToolCalls ? FinishReason.ToolCalls : FinishReason.Stop;
             this._chunkStream.addFinishChunk(reason, true);
             await this.handleFinish(
                 content,
                 reasoningContent,
+                refusalContent,
                 toolCallAccumulators,
                 reason,
                 iteration,
@@ -604,6 +778,7 @@ export abstract class ChatService implements JsonHookControls {
     private async handleFinish(
         content: string,
         reasoningContent: string,
+        refusalContent: string,
         toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }>,
         reason: FinishReason,
         iteration: number,
@@ -615,6 +790,7 @@ export abstract class ChatService implements JsonHookControls {
         this._chunkStream.addSummary({
             content,
             reasoning: reasoningContent,
+            ...(refusalContent ? { refusal: refusalContent } : {}),
             toolCallCount: toolCallAccumulators.size,
             finishReason: reason,
             ...(usage ? { usage } : {}),

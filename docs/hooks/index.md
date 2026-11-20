@@ -19,3 +19,9 @@ Two base types underpin all hook builders:
 - **`HasHooks<THookBuilder>`**: interface for any class that exposes a `.hook()` method returning a builder. Implemented by `ChatInterface`, `ChunkStreamInterface`, `ToolSuiteInterface`, and `ChatService`.
 
 These are rarely used directly; they are exported for type annotations when wrapping or composing hook builders.
+
+
+## Example pages
+
+- [Hooks](../examples/hooks.md)
+- [Json Hooks](../examples/json-hooks.md)

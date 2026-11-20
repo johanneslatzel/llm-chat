@@ -4,7 +4,17 @@ JSON hooks react to LLM events (messages, stream chunks, tool calls)
 by writing a JSON file instead of TypeScript. A `.json` file dropped into a
 directory, with the service pointed at it, fires the hook automatically.
 
-![JSON hooks: declared in config.hooksDir, targeting chat, stream or tool](../assets/llm-chat-hook-json.svg)
+```mermaid
+flowchart LR
+    accTitle: JSON hook loading path
+    accDescr: An optional environment variable overrides the configured hooks directory, which loadJsonHooks reads on init and the registry distributes to three targets.
+    Env[LLM_CHAT_HOOKS_DIR] -->|overrides| Dir[config.hooksDir]
+    Dir -->|on init| Load[loadJsonHooks]
+    Load --> Reg[JsonHookRegistry]
+    Reg --> Chat[chat]
+    Reg --> Stream[stream]
+    Reg --> Tool[tool]
+```
 
 ---
 
@@ -91,7 +101,9 @@ patterns; without it the hook fires on **every** message of those roles.
 ### `stream`: react to stream chunks
 
 Fires during LLM streaming, once per chunk. Chunks arrive as the model generates
-tokens, so the hook fires multiple times per response.
+tokens, so the hook fires multiple times per response. Stream hooks filter by
+chunk type only; `JsonHookStream` has no content or regex filter. Use a chat
+hook to match message content.
 
 | Filter | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -123,6 +135,18 @@ error.
 | `tools` | `string[]` | all tools | Only fire for specific tool names |
 | `event` | `"before"` \| `"after"` \| `"error"` | `"after"` | When to fire |
 
+Template variables depend on `event`:
+
+| Event | Variables |
+|-------|-----------|
+| `before` | `label`, `target`, `event`, `name`, `args` |
+| `after` | `label`, `target`, `event`, `result` |
+| `error` | `label`, `target`, `event`, `name`, `error` |
+
+`args` and `result` are objects. Template substitution uses `String(value)`,
+so an object renders as `[object Object]`. Omit `message` to log the full
+payload instead.
+
 ```json
 {
     "label": "track-fetch",
@@ -130,7 +154,7 @@ error.
     "tools": ["fetch_page"],
     "event": "after",
     "actions": [
-        { "type": "log", "message": "fetch_page returned {{result}}" }
+        { "type": "log" }
     ]
 }
 ```
@@ -146,7 +170,7 @@ error.
 }
 ```
 
-The first logs the result of `fetch_page` after it runs. The second warns on any
+The first logs the full payload of `fetch_page` after it runs. The second warns on any
 tool error (no `tools` filter means all tools).
 
 ---
@@ -183,15 +207,13 @@ response is discarded.
 { "type": "interrupt" }
 ```
 
-Use this to stop generation when unwanted content is detected, for example if
-the model starts leaking sensitive data:
+Use it from a tool hook to stop the send loop after a failed tool call:
 
 ```json
 {
-    "label": "stop-on-secret",
-    "target": "stream",
-    "chunks": ["content"],
-    "regex": "api_key|password|secret",
+    "label": "stop-on-tool-error",
+    "target": "tool",
+    "event": "error",
     "actions": [
         { "type": "interrupt" }
     ]
@@ -205,21 +227,13 @@ the model starts leaking sensitive data:
 Add `"resend": true` to automatically retry the request after aborting:
 
 ```json
-{
-    "label": "retry-on-error",
-    "target": "stream",
-    "chunks": ["content"],
-    "regex": "error|Error",
-    "actions": [
-        { "type": "interrupt", "resend": true }
-    ]
-}
+{ "type": "interrupt", "resend": true }
 ```
 
 When `resend` is true, `send()` loops internally. Each retry sends the same
 chat history again and the LLM generates a fresh response. If the new response
-also triggers the hook, it retries again; `maxTriggers` caps this for chat-target
-hooks.
+also triggers the hook, it retries again. Combine it with `queue-message` to
+steer the retry; `maxTriggers` caps chat-target hooks.
 
 ---
 
@@ -397,3 +411,8 @@ config.hooksDir = './my-hooks';
 ```
 
 Priority: env var > config value > unset (no hooks loaded).
+
+
+## Example pages
+
+- [Json Hooks](../examples/json-hooks.md)

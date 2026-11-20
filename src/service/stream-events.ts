@@ -7,7 +7,8 @@ export enum StreamEventType {
     ToolCallDelta = 'tool_call_delta',
     Usage = 'usage',
     Finish = 'finish',
-    Reasoning = 'reasoning'
+    Reasoning = 'reasoning',
+    Refusal = 'refusal'
 }
 
 /** A single event yielded by a service's internal stream iterator. */
@@ -22,4 +23,5 @@ export type StreamEvent =
       }
     | { type: StreamEventType.Usage; usage: CompletionUsage }
     | { type: StreamEventType.Finish; reason: FinishReason }
-    | { type: StreamEventType.Reasoning; text: string };
+    | { type: StreamEventType.Reasoning; text: string }
+    | { type: StreamEventType.Refusal; text: string };

@@ -30,6 +30,8 @@ const service = OpenAIChatService.builder()
 - `.systemPrompt()` sets a flat system prompt string; `.systemPromptFile()`
   loads the file content as that flat prompt during `init()` or the first
   `send()`. The prompt tree is not used in either case.
+- `.responseFormat()`, `.jsonObject()` and `.jsonSchema()` set the
+  `response_format` request field.
 - `.withClient()` supplies a preconfigured OpenAI client.
 - `.withOpenAIConfig()` and `.withServiceConfig()` replace the underlying
   configuration objects for advanced options.
@@ -40,17 +42,18 @@ const service = OpenAIChatService.builder()
 |----------|------|---------|-------------|
 | `model` | `string` | `LLM_CHAT_OPENAI_DEFAULT_MODEL` | Model name |
 | `temperature` | `number` | `LLM_CHAT_OPENAI_TEMPERATURE` | Sampling temperature (0–2) |
-| `maxTokens` | `number` | `LLM_CHAT_OPENAI_MAX_TOKENS` | Max output tokens (`max_tokens`) |
-| `maxCompletionTokens` | `number` | `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS` | Max completion tokens (`max_completion_tokens`, takes precedence over `maxTokens`) |
+| `maxTokens` | `number` | `LLM_CHAT_OPENAI_MAX_TOKENS` | Max output tokens (`max_tokens`); fallback output reserve for the `isContextWindowExceeded()` pre-check |
+| `maxCompletionTokens` | `number` | `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS` | Max completion tokens (`max_completion_tokens`, takes precedence over `maxTokens`); also used as the output reserve for the `isContextWindowExceeded()` pre-check only (a very loose upper bound) |
 | `stop` | `string \| string[]` | — | Stop sequences |
 | `topP` | `number` | `LLM_CHAT_OPENAI_TOP_P` | Nucleus sampling |
-| `filterReasoning` | `boolean` | — | Filter reasoning messages before sending (default: `true`) |
+| `filterReasoning` | `boolean` | — | Drop stored reasoning messages from requests and from `estimateTokens()` (default: `true`) |
 | `prefixWithTimestamp` | `boolean` | — | Prepend each message with a local ISO timestamp (default: `false`) |
 | `useDeveloperRole` | `boolean` | — | Send system prompt with `developer` role instead of `system` (default: `false`) |
 | `reasoningEffort` | `ReasoningEffort` | `LLM_CHAT_OPENAI_REASONING_EFFORT` | Reasoning effort for o-series models |
 | `toolChoice` | `ToolChoice` | `LLM_CHAT_OPENAI_TOOL_CHOICE` | Control whether the model calls tools |
 | `verbosity` | `Verbosity` | `LLM_CHAT_OPENAI_VERBOSITY` | Verbosity level (passed through to providers that support it) |
 | `includeUsage` | `boolean` | `LLM_CHAT_OPENAI_INCLUDE_USAGE` | Request streamed token usage via `stream_options.include_usage` (default: `false`) |
+| `responseFormat` | `ResponseFormat` | — | OpenAI `response_format` using `ResponseFormatType.Text`, `ResponseFormatType.JsonObject` or `ResponseFormatType.JsonSchema`; omitted by default |
 
 ## Timestamp prefix
 
@@ -68,6 +71,8 @@ const service = OpenAIChatService.builder()
 ```
 
 Useful for giving the model temporal context about when each message was created.
+The prefix is part of the outgoing content, so it is included in
+`estimateTokens()`.
 
 ## Developer role
 
@@ -234,6 +239,58 @@ const service = OpenAIChatService.builder()
 | `ToolChoice.Auto` | The model decides whether to call tools (default) |
 | `ToolChoice.Required` | The model must call one or more tools |
 
+## Structured output
+
+Set `responseFormat` to send OpenAI's [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+`response_format` field. The builder has three forms:
+
+```typescript
+const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['label', 'confidence'],
+    properties: {
+        label: { type: 'string' },
+        confidence: { type: 'number' }
+    }
+};
+
+const service = OpenAIChatService.builder()
+    .model('some-model')
+    .jsonSchema({ name: 'classification', schema, strict: true })
+    .create();
+
+await service.chat().user('Classify this message: my invoice is wrong.');
+await service.send();
+
+const result = service.lastAssistantJson<{ label: string; confidence: number }>();
+```
+
+- `.jsonObject()` sends `{ type: 'json_object' }`. The prompt must explicitly
+  ask for JSON; JSON mode does not enforce a schema.
+- `.jsonSchema({ name, schema, description?, strict? })` sends
+  `{ type: 'json_schema', json_schema: { ... } }`.
+- `.responseFormat(format)` accepts a raw `ResponseFormat` object.
+
+`ResponseFormat` is a discriminated union over `ResponseFormatType.Text`,
+`ResponseFormatType.JsonObject` and `ResponseFormatType.JsonSchema`. The enum
+values match the OpenAI wire strings.
+
+The schema is passed through verbatim. OpenAI's strict mode requires a root
+object, `additionalProperties: false`, every property listed as required, and
+a supported JSON Schema subset. llm-chat does not rewrite, validate, or repair
+the schema.
+
+`lastAssistantJson<T>()` parses the most recent assistant content. It throws
+`StructuredOutputError` with a `StructuredOutputErrorReason` reason
+(`Refused`, `Filtered`, `Incomplete` or `InvalidJson`); it returns `undefined`
+when there is no assistant content.
+Validation of business rules and any retry policy remain the caller's
+responsibility.
+
+Provider support varies. The field is opt-in and omitted by default so servers
+that reject `response_format` keep working.
+
 ## Verbosity
 
 Some providers support a verbosity parameter to control response detail:
@@ -259,3 +316,11 @@ const service = OpenAIChatService.builder()
 | `Verbosity.Low` | Concise responses |
 | `Verbosity.Medium` | Balanced responses |
 | `Verbosity.High` | Detailed responses |
+
+
+## Example pages
+
+- [Structured Output](../examples/structured-output.md)
+- [Usage And Cost](../examples/usage-and-cost.md)
+- [Local Endpoints](../examples/local-endpoints.md)
+- [Reasoning](../examples/reasoning.md)

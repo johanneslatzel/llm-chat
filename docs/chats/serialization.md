@@ -7,7 +7,7 @@ const restored = chatFromJSON(json);  // restore (re-register hooks afterwards)
 
 The `sessionId` is required in `ChatJSON` and is preserved across serialization round-trips. When deserializing legacy data that lacks a `sessionId`, a new UUID is generated.
 
-The `systemPrompt` field stores the single system prompt. The `messages` array contains only non-system messages. The system prompt is **not** duplicated in both places.
+The `systemPrompt` field holds the serialized prompt tree (`ComponentJSON | null`); it is `null` when no prompt is configured. The `messages` array contains only non-system messages. The system prompt is **not** duplicated in both places.
 
 ## Timestamps
 
@@ -17,3 +17,8 @@ Every message has a `createdAt: Date` set automatically at creation time. When s
 - **`fromJSON()`**: the ISO string is restored back to a `Date` object
 
 Hooks are not serialized; re-register after `chatFromJSON()`.
+
+
+## Example pages
+
+- [Persistence](../examples/persistence.md)

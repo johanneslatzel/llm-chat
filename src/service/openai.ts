@@ -4,9 +4,12 @@ import type {
     ChatCompletionCreateParamsStreaming
 } from 'openai/resources/chat/completions';
 import { ChatMessage, ChatRole, FinishReason } from '../chat/types.js';
+import type { TokenEstimator } from '../chat/token-estimator.js';
 import { ChatService, ChatServiceConfiguration, StreamEvent, StreamEventType } from './service.js';
 import { OpenAIChatServiceConfiguration } from './config.js';
 import type { CompletionUsage } from './stream-types.js';
+import { ResponseFormatType } from './response-format.js';
+import type { JsonSchemaResponseOptions, ResponseFormat } from './response-format.js';
 
 /** Legacy request parameter for providers that do not support `max_completion_tokens`. */
 interface LegacyMaxTokensParameter {
@@ -21,6 +24,8 @@ function toFinishReason(raw: string | null | undefined): FinishReason | null {
             return FinishReason.ToolCalls;
         case 'length':
             return FinishReason.Length;
+        case 'content_filter':
+            return FinishReason.ContentFilter;
         default:
             return null;
     }
@@ -43,46 +48,41 @@ function toLocalISOString(d: Date): string {
 }
 
 function toOpenAIMessages(
-    messages: ChatMessage[],
-    filterReasoning: boolean,
-    prefixWithTimestamp: boolean,
+    messages: readonly ChatMessage[],
+    contentOf: (message: ChatMessage) => string,
     mapSystemToDeveloper: boolean
 ): ChatCompletionMessageParam[] {
-    return messages
-        .filter((msg) => !filterReasoning || msg.role !== ChatRole.Reasoning)
-        .map((msg): ChatCompletionMessageParam => {
-            const content = prefixWithTimestamp
-                ? `${toLocalISOString(msg.createdAt)}: ${msg.content}`
-                : msg.content;
-            const base = { content } as Record<string, unknown>;
-            switch (msg.role) {
-                case ChatRole.System:
-                    return {
-                        ...base,
-                        role: mapSystemToDeveloper ? 'developer' : 'system'
-                    } as ChatCompletionMessageParam;
-                case ChatRole.Developer:
-                    return { ...base, role: 'developer' } as ChatCompletionMessageParam;
-                case ChatRole.User:
-                    return { ...base, role: 'user' } as ChatCompletionMessageParam;
-                case ChatRole.Assistant:
-                    return {
-                        ...base,
-                        role: 'assistant',
-                        tool_calls: msg.tool_calls
-                    } as ChatCompletionMessageParam;
-                case ChatRole.Tool:
-                    return {
-                        ...base,
-                        role: 'tool',
-                        tool_call_id: msg.tool_call_id!
-                    } as ChatCompletionMessageParam;
-                case ChatRole.Reasoning:
-                    return { ...base, role: 'assistant' } as ChatCompletionMessageParam;
-                default:
-                    throw new Error(`Unexpected role: ${msg.role}`);
-            }
-        });
+    return messages.map((msg): ChatCompletionMessageParam => {
+        const content = contentOf(msg);
+        const base = { content } as Record<string, unknown>;
+        switch (msg.role) {
+            case ChatRole.System:
+                return {
+                    ...base,
+                    role: mapSystemToDeveloper ? 'developer' : 'system'
+                } as ChatCompletionMessageParam;
+            case ChatRole.Developer:
+                return { ...base, role: 'developer' } as ChatCompletionMessageParam;
+            case ChatRole.User:
+                return { ...base, role: 'user' } as ChatCompletionMessageParam;
+            case ChatRole.Assistant:
+                return {
+                    ...base,
+                    role: 'assistant',
+                    tool_calls: msg.tool_calls
+                } as ChatCompletionMessageParam;
+            case ChatRole.Tool:
+                return {
+                    ...base,
+                    role: 'tool',
+                    tool_call_id: msg.tool_call_id!
+                } as ChatCompletionMessageParam;
+            case ChatRole.Reasoning:
+                return { ...base, role: 'assistant' } as ChatCompletionMessageParam;
+            default:
+                throw new Error(`Unexpected role: ${msg.role}`);
+        }
+    });
 }
 
 /** OpenAI provider implementation of {@link ChatService}. */
@@ -105,14 +105,50 @@ export class OpenAIChatService extends ChatService {
         }
     }
 
+    /**
+     * Drop stored reasoning messages when {@link filterReasoning} is enabled,
+     * matching the messages {@link createStream} sends.
+     */
+    protected shouldSendMessage(message: ChatMessage): boolean {
+        return !(this.openAIConfig.filterReasoning ?? true) || message.role !== ChatRole.Reasoning;
+    }
+
+    /**
+     * Apply the configured timestamp prefix to the content sent to the provider.
+     */
+    protected toOutgoingContent(message: ChatMessage): string {
+        return (this.openAIConfig.prefixWithTimestamp ?? false)
+            ? `${toLocalISOString(message.createdAt)}: ${message.content}`
+            : message.content;
+    }
+
+    /**
+     * Reserve the configured output budget for the proactive
+     * {@link isContextWindowExceeded} check only; this value is not part of
+     * {@link estimateTokens}. This is a very loose upper bound: it returns the
+     * configured `maxCompletionTokens`/`maxTokens`, not the expected response
+     * length. Mirrors the precedence used by {@link createStream}.
+     */
+    protected estimateCompletionTokens(): number {
+        return this.openAIConfig.maxCompletionTokens ?? this.openAIConfig.maxTokens ?? 0;
+    }
+
+    /**
+     * Count the serialized response format as provider input tokens. The schema
+     * is part of the request even though it is not a chat message.
+     */
+    protected estimateRequestTokens(estimator: TokenEstimator): number {
+        const format = this.openAIConfig.responseFormat;
+        return format === undefined ? 0 : estimator.estimate(JSON.stringify(format));
+    }
+
     protected async *createStream(signal?: AbortSignal): AsyncIterable<StreamEvent> {
         const chatMessages = this.chatImpl._rawMessages();
         const systemMessage = this.chatImpl.getSystem();
         const allMessages = systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
         const messages = toOpenAIMessages(
-            allMessages,
-            this.openAIConfig.filterReasoning ?? true,
-            this.openAIConfig.prefixWithTimestamp ?? false,
+            allMessages.filter((message) => this.shouldSendMessage(message)),
+            (message) => this.toOutgoingContent(message),
             this.openAIConfig.useDeveloperRole ?? false
         );
         const openaiTools = this._tools.getTools();
@@ -126,6 +162,9 @@ export class OpenAIChatService extends ChatService {
                 model: this.openAIConfig.model!,
                 messages,
                 ...(openaiTools.length > 0 ? { tools: openaiTools } : {}),
+                ...(this.openAIConfig?.responseFormat !== undefined
+                    ? { response_format: this.openAIConfig.responseFormat }
+                    : {}),
                 ...(this.openAIConfig?.temperature !== undefined
                     ? { temperature: this.openAIConfig.temperature }
                     : {}),
@@ -166,6 +205,11 @@ export class OpenAIChatService extends ChatService {
 
             if (delta.content) {
                 yield { type: StreamEventType.Content, text: delta.content };
+            }
+
+            const refusal = (delta as Record<string, unknown>)['refusal'];
+            if (typeof refusal === 'string' && refusal.length > 0) {
+                yield { type: StreamEventType.Refusal, text: refusal };
             }
 
             // Reasoning appears in stream deltas across different providers.
@@ -269,6 +313,30 @@ export class OpenAIChatServiceBuilder {
         this._serviceConfig.systemPromptFile = path;
         delete this._serviceConfig.systemPrompt;
         return this;
+    }
+
+    /** Set a raw OpenAI-compatible `response_format` object. */
+    responseFormat(format: ResponseFormat): this {
+        this._openAIConfig.responseFormat = format;
+        return this;
+    }
+
+    /** Enable JSON object mode. The prompt must instruct the model to return JSON. */
+    jsonObject(): this {
+        return this.responseFormat({ type: ResponseFormatType.JsonObject });
+    }
+
+    /** Enable Structured Outputs with the given JSON Schema. */
+    jsonSchema(options: JsonSchemaResponseOptions): this {
+        return this.responseFormat({
+            type: ResponseFormatType.JsonSchema,
+            json_schema: {
+                name: options.name,
+                ...(options.description !== undefined ? { description: options.description } : {}),
+                schema: options.schema,
+                ...(options.strict !== undefined ? { strict: options.strict } : {})
+            }
+        });
     }
 
     /** Use a preconfigured OpenAI client, for custom endpoints or tests. */

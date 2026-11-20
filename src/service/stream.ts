@@ -5,6 +5,7 @@ import {
     ChunkType,
     ContentChunk,
     ReasoningChunk,
+    RefusalChunk,
     ToolCallDeltaChunk,
     UsageChunk,
     FinishChunk,
@@ -40,6 +41,19 @@ export class ChunkStream implements ChunkStreamInterface {
     addReasoningChunk(text: string): void {
         const chunk: ReasoningChunk = {
             type: ChunkType.Reasoning,
+            text,
+            timestamp: new Date(),
+            seq: this._seq++,
+            batch: this._batch
+        };
+        this._chunks.push(chunk);
+        this._notify(chunk);
+    }
+
+    /** Append a model refusal chunk. */
+    addRefusalChunk(text: string): void {
+        const chunk: RefusalChunk = {
+            type: ChunkType.Refusal,
             text,
             timestamp: new Date(),
             seq: this._seq++,

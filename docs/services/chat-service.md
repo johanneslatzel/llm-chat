@@ -22,7 +22,35 @@ await service.send();
 
 The base class accumulates stream events, assembles tool calls, recurses on tool responses, and errors safely.
 
-![The send() lifecycle: queue drains, service hooks, the retry loop, and the LLM request to the provider](../assets/llm-chat-send-lifecycle.svg)
+```mermaid
+flowchart TD
+    accTitle: send() lifecycle
+    accDescr: send() takes the mutex, runs at least one round, and repeats while a resend or a reentrant call is pending.
+    S(["send()"])
+    M{"mutex held?"}
+    P[set pendingReentrant]
+    R1(["return"])
+    L[acquire mutex]
+    D[drain, beforeSendLoop]
+    B[reset flags, drain, beforeSend]
+    X[drain, _send round]
+    A[afterSend]
+    W{"needsResend or pendingReentrant?"}
+    T[afterSendLoop, drain]
+    R2(["return"])
+    S --> M
+    M -->|yes| P
+    P --> R1
+    M -->|no| L
+    L --> D
+    D --> B
+    B --> X
+    X --> A
+    A --> W
+    W -->|yes| B
+    W -->|no| T
+    T --> R2
+```
 
 ## Configuration
 
@@ -62,8 +90,10 @@ const system = service.chat().getSystem();
 // system.content now includes all file-based prompts under general
 ```
 
-`init()` is idempotent; subsequent calls are no-ops until the next
-`service.clear()` call.
+`init()` is idempotent and safe to call concurrently; subsequent calls are
+no-ops until the next `service.clear()` call. `estimateTokens()` calls
+`init()` when needed, so file-based system prompts and user prompt files are
+included in the estimate even before the first `send()`.
 
 To reload prompt files only (e.g. after modifying files on disk
 at runtime), call `loadPromptFiles()` directly. Unlike `init()`, it always
@@ -115,11 +145,58 @@ The queue uses its own mutex, so enqueuing is fast and independent of the send a
 
 For guidance on choosing between direct chat and the queue, see [Building messages: Direct chat vs message queue](../chats/building-messages.md#direct-chat-vs-message-queue).
 
+## Structured result access
+
+After `send()`, read the final answer from either helper:
+
+```typescript
+const content = service.lastAssistantContent(); // string | undefined
+const value = service.lastAssistantJson<MyType>(); // MyType | undefined
+```
+
+`lastAssistantContent()` returns the most recent assistant message content.
+`lastAssistantJson()` parses the latest provider round as JSON. It returns
+`undefined` when there is no content and throws `StructuredOutputError` when
+the model refused, the response was filtered or incomplete, or the content is
+not valid JSON.
+
+The helper only parses JSON. It does not validate against a schema, repair the
+answer, or retry. Use a validator such as Ajv or Zod in the caller when the
+schema is not enough for your business rules.
+
+
 ## Tool-call loop
 
 Each provider round is streamed by `sendLoop(iteration)`, with `iteration` starting at `0`. When the model returns tool calls, every tool runs and its results are appended as `tool` messages before the next round, which is a recursive `sendLoop(iteration + 1)` call. Rounds continue until the model stops calling tools, or until `maxToolCallRounds` is reached and the model is asked to summarise its progress.
 
-![The tool-call loop recursing over provider rounds](../assets/llm-chat-tool-call-loop.svg)
+```mermaid
+flowchart TD
+    accTitle: tool call loop
+    accDescr: sendLoop reads the stream, branches on the finish reason, and recurses to the next iteration when tool calls are involved.
+    S(["sendLoop(iteration)"])
+    RD[read stream, accumulate]
+    F["handleFinish: write summary"]
+    TC{"finish reason tool_calls?"}
+    AP[append assistant if content]
+    R1(["return"])
+    MX{"max tool rounds?"}
+    SM[append assistant, summarize prompt]
+    AT[append assistant + toolCalls]
+    EX[execute each tool]
+    AR[append each result]
+    S --> RD
+    RD --> F
+    F --> TC
+    TC -->|no| AP
+    AP --> R1
+    TC -->|yes| MX
+    MX -->|yes| SM
+    MX -->|no| AT
+    AT --> EX
+    EX --> AR
+    SM -->|iteration + 1| RD
+    AR -->|iteration + 1| RD
+```
 
 ## Tool injection
 
@@ -127,7 +204,7 @@ Each provider round is streamed by `sendLoop(iteration)`, with `iteration` start
 
 ```typescript
 await service.injectToolCall("fetch_weather", { city: "Berlin" });
-service.setNeedsResend(); // flush in next send() iteration
+await service.send(); // drains the queue at the start of send()
 ```
 
 The tool runs silently (no tool events are emitted), then an assistant message with a synthetic tool call and one or more tool result messages are enqueued into the message queue. `injectToolCall` does **not** call `interrupt()` or `send()`; the caller decides when to flush.
@@ -152,9 +229,27 @@ const exceeded = await service.isContextWindowExceeded();
 be sent to the LLM on the next `send()`:
 
 1. **System prompt**: the effective system message: the flat `systemPrompt` when set, otherwise the composed prompt tree
-2. **Chat messages**: all conversation messages (`chat.messages()`)
-3. **Queued messages**: messages staged via `service.queue()` that have not yet been drained
+2. **Chat messages**: the stored messages the provider will send (see [Provider message filtering](#provider-message-filtering)), including any content transformation, `tool_calls` and `tool_call_id` payload sent with a message
+3. **Queued messages**: messages staged via `service.queue()` that have not yet been drained, filtered the same way
 4. **Tool definitions**: all registered tools serialized to their wire format
+5. **Provider request features**: provider-specific input such as a serialized
+   `response_format`, via `estimateRequestTokens()`
+
+The output reserve from `estimateCompletionTokens()` is **not** included here.
+It is applied only by `isContextWindowExceeded()` as a proactive guard, and it
+is a **very loose upper bound**: the provider's configured maximum output, not
+an estimate of the actual response.
+
+### Provider message filtering
+
+Providers drop some stored messages from their requests. `ChatService.shouldSendMessage()`
+is a protected predicate with a `true` default; provider subclasses override it to
+exclude messages they do not send. `estimateTokens()` applies the predicate to both
+stored and queued messages, so the estimate stays consistent with `createStream()`.
+
+`OpenAIChatService` drops `ChatRole.Reasoning` messages when `filterReasoning` is
+true (the default), so stored reasoning does not count towards the estimate. When
+`filterReasoning` is false, reasoning is sent and is counted.
 
 ### Strategy pattern
 
@@ -193,7 +288,17 @@ await service.estimateTokens(new TiktokenEstimator());
 Configure `contextWindowSizeHint` on `ChatServiceConfiguration` (default `0` =
 unlimited). `isContextWindowExceeded()` returns `false` when the limit is
 `0`. When set to a positive number, it returns `true` if `estimateTokens()`
-exceeds the configured value.
+plus the provider's completion reserve exceeds the configured value.
+
+The reserve exists **only** for this proactive check. The context window is
+shared by the prompt and the response, so without it a prompt that fits on its
+own could still leave no room for the next answer. `estimateCompletionTokens()`
+defaults to `0` and is deliberately not part of `estimateTokens()`.
+`OpenAIChatService` overrides it with `maxCompletionTokens`, falling back to
+`maxTokens`. Treat it as a **very loose upper bound**: it is the configured
+maximum completion budget, not a prediction of the actual answer. A high cap
+makes the check conservative and can trigger handoff earlier than necessary.
+The comparison is strict: a value exactly at the hint is not exceeded.
 
 ```typescript
 const config = new ChatServiceConfiguration();
@@ -286,12 +391,21 @@ Stream hooks are documented in [Stream hooks](stream-hooks.md).
 Service hooks fire around the LLM request lifecycle. They allow injecting
 messages or controlling retry behavior from inside the send loop.
 
-![Service hooks: attached via service.hook(), with beforeSendLoop, beforeSend, afterSend and afterSendLoop events](../assets/llm-chat-hook-service.svg)
+```mermaid
+flowchart LR
+    accTitle: Service hook registration order
+    accDescr: A builder registers one callback, which the service then fires in a fixed order around each send round.
+    Hook["service.hook()"] --> Do[".do(callback)"]
+    Do --> BeforeLoop[beforeSendLoop]
+    BeforeLoop --> Before[beforeSend]
+    Before -->|repeats per round| After[afterSend]
+    After --> AfterLoop[afterSendLoop]
+```
 
 ### Hook reference
 
 | Hook | Callback | When it fires | Use case |
-|---|---|---|---|---|
+|---|---|---|---|
 | `.beforeSendLoop()` | `() => void` | Before the do/while retry loop, after initial queue drain | Inject messages before any iteration |
 | `.beforeSend()` | `() => void` | Each retry iteration, before `_send()`, after queue drain | Inject messages into the current LLM request |
 | `.afterSend()` | `() => void` | Each retry iteration, after `_send()` | Check conditions and call `service.setNeedsResend()` to retry |
@@ -350,3 +464,12 @@ service.hook()
 
 // later: cleanup.dispose();
 ```
+
+
+## Example pages
+
+- [Agent Loop](../examples/agent-loop.md)
+- [Context Management](../examples/context-management.md)
+- [Interruption](../examples/interruption.md)
+- [Service Hooks](../examples/service-hooks.md)
+- [Persistence](../examples/persistence.md)

@@ -86,3 +86,8 @@ from the suite. It does not affect the tutorial container reference. Pass
 packages into the tutorial container. Call it after `service.resetTutorials()`
 has re-wired the container to a fresh system prompt tree (see
 [ChatService](../services/chat-service.md)).
+
+
+## Example pages
+
+- [Tool Packages](../examples/tool-packages.md)

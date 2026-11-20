@@ -2,11 +2,25 @@
 
 The tool suite exposes a `.hook()` method that returns a builder with `.before()`, `.after()`, and `.error()` methods.
 
-![Tool hooks: attached via service.tools().hook(), with before, after and error events](../assets/llm-chat-hook-tool.svg)
+```mermaid
+flowchart LR
+    accTitle: Tool hook events around execution
+    accDescr: A tool hook optionally filters the tools it applies to, registers a callback, and then receives before, after, or error events around the tool execution.
+
+    A["service.tools().hook()"] -->|optional| B[".filter(names)"]
+    A -->|skip| C[".do(callback)"]
+    B --> C
+    C --> D["before"]
+    D --> E{"execute tool"}
+    E -->|success| F["after"]
+    E -->|on failure| G["error"]
+```
 
 Use `.filter(...names)` to restrict which tools fire the hook:
 
 ```typescript
+import { OpenAIChatService } from "@johannes.latzel/llm-chat";
+
 const service = OpenAIChatService.builder()
     .model("your-model")
     .create();
@@ -33,3 +47,8 @@ Each returns a `Hook`; call `.dispose()` to unsubscribe. Async handlers in `do()
 removing registered tools. Pass `retainHooks: true` to preserve listeners.
 
 Before-hooks receive the actual `args` object; mutations in-place propagate to the tool. After- and error-hooks are observers (mutations don't affect the returned result).
+
+
+## Example pages
+
+- [Hooks](../examples/hooks.md)
