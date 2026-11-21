@@ -1,4 +1,4 @@
-import type { FinishReason } from '../chat/types.js';
+import type { FinishReason } from '@johannes.latzel/llm-chat-message';
 import type { CompletionUsage } from './stream-types.js';
 
 /** Discriminant for stream event types yielded by a chat service. */

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatRole, ChatMessageOrigin, ChatServiceConfiguration, CharCountEstimator, Prompt } from '../../../src/index.js';
+import { ChatServiceConfiguration, CharCountEstimator, Prompt } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole } from '@johannes.latzel/llm-chat-message';
 import { TestChatService, SimpleTestTool } from '../../helper/service-mocks.js';
 
 describe('ChatService handoff and context estimation', () => {

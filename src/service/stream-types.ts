@@ -1,5 +1,5 @@
-import { FinishReason } from '../chat/types.js';
-import type { HasHooks } from '../hooks/hook-builder.js';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
+import type { HasHooks } from '@johannes.latzel/llm-chat-tool';
 import type { StreamHookBuilder } from './stream.js';
 
 /** Discriminant for stream chunk types emitted by a {@link ChunkStream}. */

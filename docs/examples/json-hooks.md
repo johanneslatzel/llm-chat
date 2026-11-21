@@ -1,56 +1,24 @@
-# JSON Hooks
+# JSON hooks
 
 JSON hooks add behavior without TypeScript code. This example retries an answer
 when the assistant refuses, and logs any tool failure.
 
 ## Hook files
 
-Create `hooks/retry-on-refusal.json`:
-
-```json
-{
-    "label": "retry-on-refusal",
-    "target": "chat",
-    "roles": ["assistant"],
-    "regex": "I don't know|I'm not sure|I can't help|I cannot help",
-    "maxTriggers": 2,
-    "actions": [
-        {
-            "type": "queue-message",
-            "role": "user",
-            "message": "Use the available tools and try again."
-        },
-        { "type": "queue-resend" }
-    ]
-}
-```
-
-Create `hooks/log-tool-errors.json`:
-
-```json
-{
-    "label": "log-tool-errors",
-    "target": "tool",
-    "event": "error",
-    "actions": [
-        { "type": "warn", "message": "Tool {{name}} failed: {{error}}" }
-    ]
-}
-```
+Define the two hooks described in [JSON hooks](../hooks/json-hooks.md), then
+place them in `./hooks`.
 
 ## Script
 
 ```typescript
+import { ChatServiceConfiguration, type ChatService } from '@johannes.latzel/llm-chat';
 import {
-    ChatServiceConfiguration,
-    OpenAIChatService,
     ResultStatus,
     Tool,
     ToolParameterProperty,
     ToolParameters,
-    type PartialToolResult
-} from '@johannes.latzel/llm-chat';
-
+    type PartialToolResult,
+} from '@johannes.latzel/llm-chat-tool';
 class LookupOrderTool extends Tool {
     constructor() {
         super(
@@ -72,11 +40,10 @@ class LookupOrderTool extends Tool {
 
 const config = new ChatServiceConfiguration();
 config.hooksDir = './hooks';
+config.systemPrompt = 'Use the order tool when a question needs order data.';
 
-const service = OpenAIChatService.builder()
-    .withServiceConfig(config)
-    .systemPrompt('Use the order tool when a question needs order data.')
-    .create();
+// Supply a ChatService built with `config`.
+declare const service: ChatService;
 
 service.tools().add(new LookupOrderTool());
 
@@ -110,4 +77,4 @@ content matching.
 
 - [JSON hooks](../hooks/json-hooks.md)
 - [HookMessageWriter](../hooks/hook-message-writer.md)
-- [Environment Variables](../env.md)
+- [Environment variables](../env.md)

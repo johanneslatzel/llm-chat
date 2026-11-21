@@ -1,4 +1,4 @@
-import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult, ToolPackage } from '../../src/index.js';
+import { ResultStatus, Tool, ToolParameters, ToolParameterProperty, type PartialToolResult, ToolPackage } from '@johannes.latzel/llm-chat-tool';
 
 export class AlphaTool extends Tool {
     constructor() {

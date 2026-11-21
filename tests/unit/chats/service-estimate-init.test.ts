@@ -1,10 +1,8 @@
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-    CharCountEstimator,
-    ChatRole,
-    ChatServiceConfiguration
-} from '../../../src/index.js';
+    CharCountEstimator, ChatServiceConfiguration } from '../../../src/index.js';
+import { ChatRole } from '@johannes.latzel/llm-chat-message';
 import { TestChatService } from '../../helper/service-mocks.js';
 import { createTempDir, createTempFile, removeTempDir } from '../../index.js';
 

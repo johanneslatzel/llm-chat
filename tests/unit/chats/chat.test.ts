@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatMessageOrigin, ChatRole, chatFromJSON, Prompt, type ToolCall } from '../../../src/index.js';
+import { chatFromJSON, Prompt } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole, type ToolCall } from '@johannes.latzel/llm-chat-message';
 import { Chat } from '../../../src/chat/chat.js';
 
 describe('Chat', async () => {

@@ -1,6 +1,44 @@
 site_name: LLM Chat
 site_url: https://johanneslatzel.github.io/llm-chat/
 repo_url: https://github.com/johanneslatzel/llm-chat
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - API Reference: api-reference.md
+  - Chats:
+      - chats/index.md
+      - chats/building-messages.md
+      - chats/chat-hooks.md
+      - chats/serialization.md
+  - Services:
+      - services/index.md
+      - services/chat-service.md
+      - services/custom-provider.md
+      - services/inline-reasoning.md
+      - services/inline-tool-calls.md
+      - services/stream-hooks.md
+      - services/interrupt.md
+  - Hooks:
+      - hooks/index.md
+      - hooks/json-hooks.md
+      - hooks/hook-message-writer.md
+  - Tools:
+      - tools/index.md
+  - Examples:
+      - examples/index.md
+      - examples/quick-start.md
+      - examples/interactive-chat.md
+      - examples/system-prompts.md
+      - examples/tool-calling.md
+      - examples/agent-loop.md
+      - examples/hooks.md
+      - examples/service-hooks.md
+      - examples/json-hooks.md
+      - examples/interruption.md
+      - examples/context-management.md
+      - examples/persistence.md
+      - examples/testing.md
+  - Environment variables: env.md
 theme:
   name: material
   palette:

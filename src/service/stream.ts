@@ -1,6 +1,5 @@
-import { Hook } from '../hooks/hook.js';
-import { HookBuilderBase } from '../hooks/hook-builder.js';
-import { FinishReason } from '../chat/types.js';
+import { Hook, HookBuilderBase } from '@johannes.latzel/llm-chat-tool';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
 import {
     ChunkType,
     ContentChunk,

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ChatService, ChatServiceConfiguration, FinishReason, Tool, ToolParameters, ResultStatus, ResultBuilder, type PartialToolResult } from '../../../src/index.js';
+import { ChatService, ChatServiceConfiguration } from '../../../src/index.js';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
+import { Tool, ToolParameters, ResultStatus, ResultBuilder, type PartialToolResult } from '@johannes.latzel/llm-chat-tool';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { TestChatService, SimpleTestTool, FailingTestTool, ThrowsStringTestTool } from '../../helper/service-mocks.js';
 

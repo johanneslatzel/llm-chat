@@ -1,50 +1,33 @@
-# Environment Variables
+# Environment variables
 
 Set these in the shell, a `.env` file, or the process environment. A `.env.example` is included.
 
-## Connection
+Provider credentials and model settings live in `@johannes.latzel/llm-chat-openai`;
+see the [provider environment variables](https://johanneslatzel.github.io/llm-chat-openai/env/).
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | no | `""` | API key |
-| `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | API endpoint (this is the OpenAI SDK default; when using a local server like LM Studio, set this to `http://localhost:1234/v1`) |
-| `LLM_CHAT_OPENAI_DEFAULT_MODEL` | no | `""` | Fallback model name |
+## Chat service
 
-## OpenAI overrides (optional)
-
-Read at `OpenAIChatService` construction:
-
-| Variable | Description |
-|----------|-------------|
-| `LLM_CHAT_OPENAI_TEMPERATURE` | Sampling temperature (0-2) |
-| `LLM_CHAT_OPENAI_MAX_TOKENS` | `max_tokens` |
-| `LLM_CHAT_OPENAI_MAX_COMPLETION_TOKENS` | `max_completion_tokens` (o1/o3, takes precedence) |
-| `LLM_CHAT_OPENAI_TOP_P` | Nucleus sampling |
-| `LLM_CHAT_OPENAI_REASONING_EFFORT` | `reasoning_effort` for o-series models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
-| `LLM_CHAT_OPENAI_TOOL_CHOICE` | `tool_choice` (`none`, `auto`, `required`) |
-| `LLM_CHAT_OPENAI_VERBOSITY` | `verbosity` (`low`, `medium`, `high`) |
-| `LLM_CHAT_OPENAI_INCLUDE_USAGE` | Request streamed token usage via `stream_options.include_usage` (`true`/`1`; default `false`) |
-
-## Chat Service
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `10` | Max tool-call recursion depth |
-| `LLM_CHAT_PARSE_INLINE_REASONING` | `false` | Parse explicit inline reasoning markers in streamed content; see [Inline reasoning](services/inline-reasoning.md) |
-| `LLM_CHAT_PARSE_INLINE_TOOL_CALLS` | `false` | Parse explicit inline tool-call blocks in streamed content; see [Inline tool calls](services/inline-tool-calls.md) |
-| `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `0` | Context window size hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `number` | `10` | Max tool-call recursion depth |
+| `LLM_CHAT_PARSE_INLINE_REASONING` | `boolean` | `false` | Parse explicit inline reasoning markers in streamed content; see [Inline reasoning](services/inline-reasoning.md) |
+| `LLM_CHAT_PARSE_INLINE_TOOL_CALLS` | `boolean` | `false` | Parse explicit inline tool-call blocks in streamed content; see [Inline tool calls](services/inline-tool-calls.md) |
+| `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT` | `number` | `0` | Context window size hint in tokens (`0` = unlimited). Used by `isContextWindowExceeded()` |
 
 ## Prompts
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_CHAT_SYSTEM_PROMPT` | unset | Inline flat system prompt; wins over the file and directory sources |
-| `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general`. Read only if it exists; never created |
-| `LLM_CHAT_SYSTEM_PROMPT_FILE` | unset | Path to a single `.md` or `.txt` file used as the flat system prompt; takes precedence over `LLM_CHAT_SYSTEM_PROMPT_DIR` |
-| `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `LLM_CHAT_SYSTEM_PROMPT` | `string` | unset | Inline flat system prompt; wins over the file and directory sources |
+| `LLM_CHAT_SYSTEM_PROMPT_DIR` | `string` | `./prompts/` | Directory containing `.md` and `.txt` system prompt files; each file becomes a component under `general`. Read only if it exists; never created |
+| `LLM_CHAT_SYSTEM_PROMPT_FILE` | `string` | unset | Path to a single `.md` or `.txt` file used as the flat system prompt; takes precedence over `LLM_CHAT_SYSTEM_PROMPT_DIR` |
+| `LLM_CHAT_USER_PROMPTS` | `path list` | `""` | Comma-separated file paths for initial user messages; an empty value produces an empty list |
+
+Setting `systemPromptDir = ''` disables prompt-directory loading; the default is
+`./prompts/`.
 
 ## JSON hooks
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_CHAT_HOOKS_DIR` | none | Directory containing `.json` hook definition files (auto-loaded on init/send) |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `LLM_CHAT_HOOKS_DIR` | `string` | none | Directory containing `.json` hook definition files (auto-loaded on init/send) |

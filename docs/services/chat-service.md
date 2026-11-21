@@ -3,17 +3,15 @@
 `ChatService` handles the tool-call loop. It owns the chat instance and tool registry. Tools are registered via `service.tools().add(...)`:
 
 ```typescript
-import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
+import { ChatServiceConfiguration, type ChatService } from "@johannes.latzel/llm-chat";
 
 const config = new ChatServiceConfiguration();
 config.maxToolCallRounds = 25;
 config.systemPromptDir = "./prompts";
 config.userPromptPaths = ["./context.md"];
 
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .withServiceConfig(config)
-    .create();
+// Pass `config` to your ChatService subclass constructor.
+declare const service: ChatService;
 
 const chat = service.chat();
 // ... setup messages ...
@@ -58,7 +56,7 @@ flowchart TD
 |----------|---------|---------|-------------|
 | `maxToolCallRounds` | `LLM_CHAT_MAX_TOOL_CALL_ROUNDS` | `10` | Max tool-call recursion depth |
 | `systemPromptDir` | `LLM_CHAT_SYSTEM_PROMPT_DIR` | `./prompts/` | Directory of `.md`/`.txt` system prompt files (read if it exists; never created) |
-| `userPromptPaths` | `LLM_CHAT_USER_PROMPTS` | `""` | Comma-separated file paths for initial user messages |
+| `userPromptPaths` | `LLM_CHAT_USER_PROMPTS` | `[]` | Comma-separated file paths for initial user messages; the env value is split on commas |
 | `hooksDir` | `LLM_CHAT_HOOKS_DIR` | unset | Directory containing `.json` hook definition files |
 | `systemPrompt` | `LLM_CHAT_SYSTEM_PROMPT` | unset | Flat string that overrides the system prompt tree entirely; file-based system prompts are skipped |
 | `systemPromptFile` | `LLM_CHAT_SYSTEM_PROMPT_FILE` | unset | Single file loaded as the flat system prompt; `systemPrompt` takes precedence |
@@ -158,11 +156,12 @@ const value = service.lastAssistantJson<MyType>(); // MyType | undefined
 `lastAssistantJson()` parses the latest provider round as JSON. It returns
 `undefined` when there is no content and throws `StructuredOutputError` when
 the model refused, the response was filtered or incomplete, or the content is
-not valid JSON.
+not valid JSON; the error's reason identifies which of these cases occurred.
 
-The helper only parses JSON. It does not validate against a schema, repair the
-answer, or retry. Use a validator such as Ajv or Zod in the caller when the
-schema is not enough for your business rules.
+The service requests structured output from the provider (`response_format`
+carrying JSON, or a JSON Schema). It does not validate the answer against that
+schema, repair malformed output, or retry. Use a validator such as Ajv or Zod
+in the caller when the schema is not enough for business rules.
 
 
 ## Tool-call loop
@@ -247,9 +246,9 @@ is a protected predicate with a `true` default; provider subclasses override it 
 exclude messages they do not send. `estimateTokens()` applies the predicate to both
 stored and queued messages, so the estimate stays consistent with `createStream()`.
 
-`OpenAIChatService` drops `ChatRole.Reasoning` messages when `filterReasoning` is
-true (the default), so stored reasoning does not count towards the estimate. When
-`filterReasoning` is false, reasoning is sent and is counted.
+A provider subclass may drop messages in `shouldSendMessage()`, for example,
+stored reasoning that the backend should not receive. `estimateTokens()` applies
+the same predicate, so dropped messages do not count towards the estimate.
 
 ### Strategy pattern
 
@@ -294,20 +293,20 @@ The reserve exists **only** for this proactive check. The context window is
 shared by the prompt and the response, so without it a prompt that fits on its
 own could still leave no room for the next answer. `estimateCompletionTokens()`
 defaults to `0` and is deliberately not part of `estimateTokens()`.
-`OpenAIChatService` overrides it with `maxCompletionTokens`, falling back to
-`maxTokens`. Treat it as a **very loose upper bound**: it is the configured
-maximum completion budget, not a prediction of the actual answer. A high cap
+A provider subclass may override it with the backend's maximum completion
+budget. Treat it as a **very loose upper bound**: it is the configured maximum
+completion budget, not a prediction of the actual answer. A high cap
 makes the check conservative and can trigger handoff earlier than necessary.
 The comparison is strict: a value exactly at the hint is not exceeded.
 
 ```typescript
+import { ChatServiceConfiguration, type ChatService } from "@johannes.latzel/llm-chat";
+
 const config = new ChatServiceConfiguration();
 config.contextWindowSizeHint = 128_000; // 128k tokens
 
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .withServiceConfig(config)
-    .create();
+// Pass `config` to your ChatService subclass constructor.
+declare const service: ChatService;
 
 // later, before send():
 if (await service.isContextWindowExceeded()) {
@@ -366,7 +365,7 @@ const archive = chat.historicMessages();
 ### Example: summarising handoff
 
 ```typescript
-import { ChatRole } from '@johannes.latzel/llm-chat';
+import { ChatMessageOrigin, ChatRole } from '@johannes.latzel/llm-chat-message';
 
 // After detecting isContextWindowExceeded():
 await chat.handoff({
@@ -376,7 +375,7 @@ await chat.handoff({
             role: ChatRole.User,
             content: `[Previous conversation summarised: ${msgs.length} messages archived]`,
             createdAt: new Date(),
-            origin: 'system' as any
+            origin: ChatMessageOrigin.System
         }];
     }
 });
@@ -468,8 +467,9 @@ service.hook()
 
 ## Example pages
 
-- [Agent Loop](../examples/agent-loop.md)
-- [Context Management](../examples/context-management.md)
+- [Tool calling](../examples/tool-calling.md)
+- [Agent loop](../examples/agent-loop.md)
+- [Context management](../examples/context-management.md)
 - [Interruption](../examples/interruption.md)
-- [Service Hooks](../examples/service-hooks.md)
+- [Service hooks](../examples/service-hooks.md)
 - [Persistence](../examples/persistence.md)

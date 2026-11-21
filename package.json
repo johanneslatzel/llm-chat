@@ -1,7 +1,7 @@
 {
     "name": "@johannes.latzel/llm-chat",
-    "version": "0.11.0",
-    "description": "TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-compatible APIs",
+    "version": "0.12.0",
+    "description": "Provider-neutral TypeScript LLM chat engine with typed tool calls, streaming, and hooks",
     "license": "MIT",
     "sideEffects": false,
     "files": [
@@ -22,8 +22,7 @@
         "llm",
         "chat",
         "agents",
-        "openai",
-        "openai-compatible",
+        "provider-neutral",
         "typescript",
         "streaming",
         "tool-calls",
@@ -69,8 +68,10 @@
         ]
     },
     "dependencies": {
-        "async-mutex": "^0.5.0",
-        "openai": "^7.43.0"
+        "@johannes.latzel/env": "^0.1.0",
+        "@johannes.latzel/llm-chat-message": "^0.1.0",
+        "@johannes.latzel/llm-chat-tool": "^0.1.0",
+        "async-mutex": "^0.5.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

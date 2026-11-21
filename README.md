@@ -2,22 +2,6 @@
 
 <h1 align="center">@johannes.latzel/llm-chat</h1>
 
-<p align="center">
-TypeScript chat agents with typed tool calls, streaming, and hooks for OpenAI-compatible APIs
-</p>
-
-```mermaid
-flowchart TD
-    accTitle: llm-chat architecture overview
-    accDescr: An application uses OpenAIChatService, a ChatService subclass that owns a Chat, a ChunkStream and a ToolSuite, each carrying hook points, and that calls an OpenAI-compatible API over HTTP.
-    app["Application"] -->|"uses"| oai["OpenAIChatService"]
-    oai -->|"extends"| svc["ChatService<br/>abstract · hooks"]
-    svc --> chat["Chat<br/>hooks"]
-    svc --> stream["ChunkStream<br/>hooks"]
-    svc --> tools["ToolSuite<br/>hooks"]
-    oai -->|"HTTP"| api["OpenAI-compatible API"]
-```
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![NPM](https://nodei.co/npm/@johannes.latzel/llm-chat.svg?style=shields&data=n,v,u,d,s)](https://www.npmjs.com/package/@johannes.latzel/llm-chat)
 [![version](https://img.shields.io/github/package-json/v/johanneslatzel/llm-chat)](https://github.com/johanneslatzel/llm-chat/releases)
@@ -27,8 +11,12 @@ flowchart TD
 [![Feedback Welcome](https://img.shields.io/badge/feedback-welcome-brightgreen)](https://github.com/johanneslatzel/llm-chat/discussions)
 [![codecov](https://codecov.io/gh/johanneslatzel/llm-chat/graph/badge.svg)](https://codecov.io/gh/johanneslatzel/llm-chat)
 [![CI](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/johanneslatzel/llm-chat/actions/workflows/ci.yml)
-[![Socket Badge](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)
+[![Socket Badge](https://badge.socket.dev/npm/package/@johannes.latzel/llm-chat/latest)](https://socket.dev/npm/package/@johannes.latzel/llm-chat)
 [![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green)](https://github.com/mefengl/made-by-ai)
+
+<p align="center">
+Provider-neutral TypeScript LLM chat engine with typed tool calls, streaming, and hooks
+</p>
 
 <p align="center">
 <a href="https://www.npmjs.com/package/@johannes.latzel/llm-chat">npm</a>
@@ -51,9 +39,11 @@ flowchart TD
 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
+- [Packages](#packages)
+- [Related packages](#related-packages)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-    - [Configure](#configure)
+    - [Connect a provider](#connect-a-provider)
     - [Stream a reply](#stream-a-reply)
     - [Loop a conversation](#loop-a-conversation)
 - [System prompts](#system-prompts)
@@ -63,7 +53,7 @@ flowchart TD
 - [Add a tool](#add-a-tool)
 - [Hooks](#hooks)
 - [Why llm-chat](#why-llm-chat)
-- [Works with OpenAI-compatible endpoints](#works-with-openai-compatible-endpoints)
+- [Providers](#providers)
 - [When to use llm-chat](#when-to-use-llm-chat)
 - [Troubleshooting](#troubleshooting)
 - [Support](#support)
@@ -85,10 +75,15 @@ flowchart TD
 - streaming with typed chunk hooks
 - message, tool, stream, and service hooks
 - prompt trees built from flat strings, files, or directories
-- OpenAI-compatible endpoints, including local servers
+- a provider-neutral `ChatService` contract with normalized stream events
 - structured output via JSON mode and JSON Schema
 - session persistence and interrupt/resume
-- two runtime dependencies: `openai` and `async-mutex`
+- four runtime dependencies: `@johannes.latzel/llm-chat-message`, `@johannes.latzel/llm-chat-tool`, `@johannes.latzel/env`, and `async-mutex`
+
+Structured output requests JSON from the provider and parses it. The engine
+surfaces `StructuredOutputError` when the answer is missing, refused,
+filtered, incomplete, or not valid JSON. It does not schema-validate, repair,
+or retry; use a validator in the caller when the schema has to hold.
 
 ## Prerequisites
 
@@ -96,53 +91,99 @@ flowchart TD
 |---|---|
 | Node.js | >= 22 |
 | Module format | ESM-only (no CommonJS build) |
-| API | OpenAI Chat Completions-compatible endpoint |
+| Provider | Required to send to a hosted model; optional for engine-only use. Use `@johannes.latzel/llm-chat-openai` or implement `ChatService.createStream()` |
 | TypeScript | Optional; `.d.ts` files included |
+
+## Packages
+
+The ecosystem is split into four packages: `@johannes.latzel/llm-chat` (the
+abstract engine), `@johannes.latzel/llm-chat-message` (message vocabulary),
+`@johannes.latzel/llm-chat-tool` (tool primitives), and
+`@johannes.latzel/llm-chat-openai` (the OpenAI provider).
+
+Nothing is re-exported through `@johannes.latzel/llm-chat`; import each
+primitive from its owning package. The public API types are
+`ChatInterface`, `ChunkStreamInterface`, and `ToolSuiteInterface`; their
+implementing classes are internal. `ChatRole`, `ChatMessageOrigin`,
+`ChatMessage`, `ToolCall`, `MessageWriter` and related types belong to
+`@johannes.latzel/llm-chat-message`.
+
+The engine has no provider dependency and no vendor SDK.
+
+## Related packages
+
+| Package | Description |
+|---|---|
+| [`@johannes.latzel/llm-chat-message`](https://johanneslatzel.github.io/llm-chat-message/) | Provider-neutral message, role, finish-reason and writer primitives; zero runtime dependencies |
+| [`@johannes.latzel/llm-chat-tool`](https://johanneslatzel.github.io/llm-chat-tool/) | Provider-neutral tool, hook and result primitives; zero runtime dependencies |
+| [`@johannes.latzel/llm-chat-openai`](https://johanneslatzel.github.io/llm-chat-openai/) | OpenAI / OpenAI-compatible provider implementing `ChatService.createStream()` |
 
 ## Installation
 
 ```bash
+# engine
 npm install @johannes.latzel/llm-chat
+
+# optional: OpenAI / OpenAI-compatible provider
+npm install @johannes.latzel/llm-chat-openai
+
+# message primitives when importing message types directly
+npm install @johannes.latzel/llm-chat-message
+
+# tool primitives when defining tools
+npm install @johannes.latzel/llm-chat-tool
 ```
+
+A provider is optional for engine-only use and required to send to a hosted
+model: use `@johannes.latzel/llm-chat-openai`, or implement
+`ChatService.createStream()` in a subclass. See
+[Adding a new provider](https://johanneslatzel.github.io/llm-chat/services/custom-provider/).
 
 ## Quick start
 
-### Configure
+### Connect a provider
 
-Most settings can be provided through environment variables or config objects
-passed to the builder.
+`ChatService` is abstract, and the engine ships no provider. Use
+`@johannes.latzel/llm-chat-openai`, or write a provider subclass that
+implements `createStream(signal?)` and yields `StreamEvent` values; the engine
+handles the tool loop, streaming state and hooks. See
+[Adding a new provider](https://johanneslatzel.github.io/llm-chat/services/custom-provider/)
+for a complete skeleton.
 
-```bash
-export OPENAI_API_KEY=your-key
-export OPENAI_BASE_URL=https://api.openai.com/v1
+The engine reads only `LLM_CHAT_*` variables. The OpenAI provider adds
+`OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and
+`LLM_CHAT_OPENAI_DEFAULT_MODEL`; see the
+[provider environment variables](https://johanneslatzel.github.io/llm-chat-openai/env/)
+and the [provider quick start](https://johanneslatzel.github.io/llm-chat-openai/quickstart/)
+for a setup with `OPENAI_API_KEY`.
+
+The snippets below use `ChatService` so they stay provider-neutral.
+
+```typescript
+import type { ChatService } from "@johannes.latzel/llm-chat";
+
+// Supply a concrete ChatService from a provider package,
+// or subclass ChatService yourself.
+declare const service: ChatService;
 ```
 
 ### Stream a reply
 
-Create a service, send a message, and stream the reply:
-
 ```typescript
-import { OpenAIChatService, ChunkType } from "@johannes.latzel/llm-chat";
+import { ChunkType, type ChatService } from "@johannes.latzel/llm-chat";
 
-// build a service
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .systemPrompt("You are a concise assistant.")
-    .create();
+declare const service: ChatService;
 
-// configure how to handle the responses
 service.stream()
     .hook()
     .chunks(ChunkType.Content)
     .do((chunk) => process.stdout.write(chunk.text));
 
-// send a single message
-service.chat().user("What can you do?");
+await service.chat().user("What can you do?");
 await service.send();
 
-// send several messages
-service.chat().user("Great.");
-service.chat().user("What now?");
+await service.chat().user("Great.");
+await service.chat().user("What now?");
 await service.send();
 ```
 
@@ -151,8 +192,7 @@ await service.send();
 ### Loop a conversation
 
 A loop is useful when the next turn depends on more than the last message.
-Suppose your app registers a `run_tests` tool that runs your test command. Set
-a flag from its tool hook:
+A `run_tests` tool that runs the test command can set a flag from its hook:
 
 ```typescript
 let testsPassed = false;
@@ -178,13 +218,13 @@ service.tools()
 Then drive the loop manually:
 
 ```typescript
-service.chat().user("Refactor the project until the tests pass.");
+await service.chat().user("Refactor the project until the tests pass.");
 
 while (!testsPassed) {
     await service.send();
 
     if (!testsPassed) {
-        service.chat().user("The tests are still failing. Continue.");
+        await service.chat().user("The tests are still failing. Continue.");
     }
 }
 ```
@@ -201,7 +241,7 @@ service.hook()
         service.setNeedsResend();
     });
 
-service.chat().user("Refactor the project until the tests pass.");
+await service.chat().user("Refactor the project until the tests pass.");
 await service.send();
 ```
 
@@ -219,10 +259,10 @@ over files, which win over prompt trees.
 ### Flat string
 
 ```typescript
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .systemPrompt("You are a concise assistant.")
-    .create();
+import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
+
+const config = new ChatServiceConfiguration();
+config.systemPrompt = "You are a concise assistant.";
 ```
 
 Set `LLM_CHAT_SYSTEM_PROMPT` to use it via env.
@@ -230,22 +270,25 @@ Set `LLM_CHAT_SYSTEM_PROMPT` to use it via env.
 ### File
 
 ```typescript
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .systemPromptFile("AGENTS.md")
-    .create();
+import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
+
+const config = new ChatServiceConfiguration();
+config.systemPromptFile = "AGENTS.md";
 ```
 
 Set `LLM_CHAT_SYSTEM_PROMPT_FILE` to use it via env.
 
 ### Prompt tree
 
-![System prompt tree](docs/assets/llm-chat-system-prompt-tree.svg)
+See the [system prompt tree](https://johanneslatzel.github.io/llm-chat/chats/building-messages/#system-prompt) diagram in the docs.
 
 Build the prompt tree programmatically:
 
 ```typescript
-const service = OpenAIChatService.builder().model("your-model").create();
+import type { ChatService } from "@johannes.latzel/llm-chat";
+
+declare const service: ChatService;
+
 const general = service.chat().system().child("general");
 
 general.prompt("persona").setContent("You are a concise assistant.");
@@ -256,38 +299,36 @@ general.prompt("context").setContent("You are helping with TypeScript.");
 Or load a directory of `.md`/`.txt` files as prompt components:
 
 ```typescript
-import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
+import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
 
 const config = new ChatServiceConfiguration();
 config.systemPromptDir = "./prompts";
-
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .withServiceConfig(config)
-    .create();
 ```
 
-Set `LLM_CHAT_SYSTEM_PROMPT_DIR` to use the directory via env.
+Set `LLM_CHAT_SYSTEM_PROMPT_DIR` to use the directory via env. Pass the config
+to the provider's `ChatService` constructor.
 
 [Back to top](#readme-top)
 
 ## Add a tool
 
 Extend `Tool`, describe the parameters, and register it. The service runs the
-tool-call loop for you. Tool errors are returned to the model instead of crashing the loop.
+tool-call loop. Tool errors are returned to the model instead of crashing the loop.
 
 The weather tool calls [wttr.in](https://wttr.in/), which returns the current
 condition as plain text. No API key is required.
 
 ```typescript
 import {
-    OpenAIChatService,
     ResultStatus,
     Tool,
     ToolParameterProperty,
     ToolParameters,
-    type PartialToolResult
-} from "@johannes.latzel/llm-chat";
+    type PartialToolResult,
+} from "@johannes.latzel/llm-chat-tool";
+import type { ChatService } from "@johannes.latzel/llm-chat";
+
+declare const service: ChatService;
 
 class WeatherTool extends Tool {
     constructor() {
@@ -322,13 +363,8 @@ class WeatherTool extends Tool {
     }
 }
 
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .create();
 service.tools().add(new WeatherTool());
-
-service.chat().user("What is the weather in Berlin?");
-
+await service.chat().user("What is the weather in Berlin?");
 await service.send();
 ```
 
@@ -348,7 +384,8 @@ hook returns a `Hook`; call `.dispose()` to unsubscribe.
 | JSON | `LLM_CHAT_HOOKS_DIR` | declarative `.json` hook files |
 
 ```typescript
-import { ChatRole, ChunkType } from "@johannes.latzel/llm-chat";
+import { ChunkType } from "@johannes.latzel/llm-chat";
+import { ChatRole } from "@johannes.latzel/llm-chat-message";
 
 // before a tool runs
 service.tools().hook().before().do((name, args) => {
@@ -371,8 +408,8 @@ const hook = service.stream().hook().chunks(ChunkType.Finish).do((chunk) => {
 
 ## Why llm-chat
 
-The OpenAI SDK handles the request. llm-chat adds the conversation loop around
-it. See the [architecture overview](docs/architecture.md#overview) for the
+A provider subclass handles transport and request mapping. `llm-chat` adds the
+conversation loop around it. See the [architecture overview](https://johanneslatzel.github.io/llm-chat/architecture/#overview) for the
 full figure.
 
 - **Typed tool schemas** with nested objects, arrays, hidden aliases, and
@@ -386,74 +423,70 @@ full figure.
 - **Conversation state** that can be serialized, restored, queued, compacted,
   and passed between sessions.
 - **Composable system prompts** with a prompt tree and reusable components.
-- **OpenAI-compatible by design**: one service for any endpoint implementing
-  the Chat Completions API.
-- **Small runtime surface**: `openai` and `async-mutex`, no agent framework.
+- **Provider-neutral by design**: one `ChatService` contract for any backend.
+- **Small runtime surface**: `@johannes.latzel/llm-chat-message`,
+  `@johannes.latzel/llm-chat-tool`, `@johannes.latzel/env`, and `async-mutex`.
 
 Optional extras include inline reasoning and tool-call parsing, token
 estimation, context-window handoff, and tool packages with tutorial prompts.
 
 [Back to top](#readme-top)
 
-## Works with OpenAI-compatible endpoints
+## Providers
 
-`OpenAIChatService` calls the OpenAI Chat Completions API. Point
-`OPENAI_BASE_URL` at any server that implements it. Provider-specific
-reasoning fields are handled when present, so the same service works across
-OpenAI-compatible APIs without provider-specific client code.
+The engine ships no provider. Use `@johannes.latzel/llm-chat-openai`, or
+implement a provider subclass: `createStream(signal?)` yields normalized
+`StreamEvent` values:
 
-```typescript
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .temperature(0.3)
-    .maxTokens(2048)
-    .create();
-```
+- content
+- reasoning
+- refusal
+- tool-call deltas
+- usage
+- finish
+
+The base class accumulates events, assembles tool calls, runs registered tools,
+and records the conversation. See
+[Adding a new provider](https://johanneslatzel.github.io/llm-chat/services/custom-provider/)
+for the contract and a skeleton implementation.
 
 [Back to top](#readme-top)
 
 ## When to use llm-chat
 
-Use llm-chat when you want a typed chat loop, streaming, and tool execution
-without adopting an agent framework.
+Use llm-chat for a typed chat loop, streaming, and tool execution without
+adopting an agent framework.
 
-- Use the **raw OpenAI SDK** for single requests or when you only need
-  transport.
-- Use **Vercel AI SDK** when you need multi-provider model access,
-  structured output, or streaming UI hooks across React, Next.js, Vue,
-  Svelte, or Angular.
-- Use **LangChain** when you need an agent framework with broad
-  integrations, RAG and vector-store abstractions, or LangGraph for
-  stateful orchestration.
+- Use a **raw vendor SDK** for single requests or transport only.
+- Use **Vercel AI SDK** for multi-provider model access, structured output,
+  or streaming UI hooks across React, Next.js, Vue, Svelte, or Angular.
+- Use **LangChain** for an agent framework with broad integrations, RAG and
+  vector-store abstractions, or LangGraph for stateful orchestration.
 
 [Back to top](#readme-top)
 
 ## Troubleshooting
 
-### Missing credentials
+### No provider configured
 
-`OPENAI_API_KEY` must be a non-empty string. If your endpoint ignores
-authentication, use any placeholder value.
+`ChatService` is abstract and the engine ships no provider. Use
+`@johannes.latzel/llm-chat-openai`, or subclass `ChatService` and implement
+`createStream()`. See [Adding a new provider](https://johanneslatzel.github.io/llm-chat/services/custom-provider/).
 
-### No model provided
+### Model selection
 
-Pass a model with `.model("your-model")` or set
-`LLM_CHAT_OPENAI_DEFAULT_MODEL`.
-
-### Wrong endpoint
-
-Set `OPENAI_BASE_URL` to the full API prefix, usually ending in `/v1`, for
-example `https://api.openai.com/v1`.
-
-### The server rejects `stream_options`
-
-Some OpenAI-compatible servers reject streamed token usage. Leave
-`OpenAIChatServiceConfiguration.includeUsage` at its default `false` value.
+Model names and credentials are provider-specific. Configure them in the
+provider subclass; the engine does not read vendor environment variables.
 
 ### System prompt file not found
 
 `systemPromptFile` is resolved from `process.cwd()`. The file must exist when
 `init()` or the first `send()` runs, otherwise loading throws.
+
+### Unexpected message filtering
+
+Provider subclasses can override `shouldSendMessage()`. If stored messages do
+not reach the backend, check that override.
 
 [Back to top](#readme-top)
 
@@ -471,32 +504,34 @@ Some OpenAI-compatible servers reject streamed token usage. Leave
 | Concept | What it does | Docs |
 |---|---|---|
 | `Chat` | Message history, roles, system prompt tree, serialization | [Chats](https://johanneslatzel.github.io/llm-chat/chats/) |
-| `ChatService` | Send loop, tool execution, queueing, context handoff | [Chat service](https://johanneslatzel.github.io/llm-chat/services/chat-service/) |
-| `Tool` | Typed parameter schema and execution boundary | [Defining tools](https://johanneslatzel.github.io/llm-chat/tools/defining-tools/) |
+| `ChatService` | Send loop, tool execution, queueing, context handoff | [ChatService](https://johanneslatzel.github.io/llm-chat/services/chat-service/) |
+| `Tool` | Typed parameter schema and execution boundary | [Defining tools](https://johanneslatzel.github.io/llm-chat-tool/tools/defining-tools/) |
 | `ChunkStream` | Streaming chunks, summaries, and usage | [Stream hooks](https://johanneslatzel.github.io/llm-chat/services/stream-hooks/) |
 | Hooks | Stream, message, tool, service, and JSON hooks | [Hooks](https://johanneslatzel.github.io/llm-chat/hooks/) |
-| `OpenAIChatServiceConfiguration` | Model, sampling, reasoning, tool choice, usage | [OpenAI service](https://johanneslatzel.github.io/llm-chat/services/openai/) |
+| `ChatServiceConfiguration` | Tool rounds, prompts, inline parsing, context hint | [ChatService](https://johanneslatzel.github.io/llm-chat/services/chat-service/#configuration) |
 
 ### Guides
 
 - [Examples](https://johanneslatzel.github.io/llm-chat/examples/)
 - [Quick start](https://johanneslatzel.github.io/llm-chat/examples/quick-start/)
-- [Typed tools](https://johanneslatzel.github.io/llm-chat/examples/typed-tools/)
-- [Tool packages](https://johanneslatzel.github.io/llm-chat/examples/tool-packages/)
-- [Timed tools](https://johanneslatzel.github.io/llm-chat/examples/timed-tools/)
+- [Typed tools](https://johanneslatzel.github.io/llm-chat-tool/examples/typed-tools/)
+- [Tool packages](https://johanneslatzel.github.io/llm-chat-tool/examples/tool-packages/)
+- [Timed tools](https://johanneslatzel.github.io/llm-chat-tool/examples/timed-tools/)
 - [Service hooks](https://johanneslatzel.github.io/llm-chat/examples/service-hooks/)
-- [Structured output](https://johanneslatzel.github.io/llm-chat/examples/structured-output/)
+- [Tool calling](https://johanneslatzel.github.io/llm-chat/examples/tool-calling/)
+- [Adding a new provider](https://johanneslatzel.github.io/llm-chat/services/custom-provider/)
 - [Agent loop](https://johanneslatzel.github.io/llm-chat/examples/agent-loop/)
 - [Context management](https://johanneslatzel.github.io/llm-chat/examples/context-management/)
 - [Testing](https://johanneslatzel.github.io/llm-chat/examples/testing/)
 - [Building messages](https://johanneslatzel.github.io/llm-chat/chats/building-messages/)
-- [Defining tools](https://johanneslatzel.github.io/llm-chat/tools/defining-tools/)
-- [Tool packages](https://johanneslatzel.github.io/llm-chat/tools/packages/)
+- [Defining tools](https://johanneslatzel.github.io/llm-chat-tool/tools/defining-tools/)
+- [Tool packages](https://johanneslatzel.github.io/llm-chat-tool/tools/packages/)
 - [Stream hooks](https://johanneslatzel.github.io/llm-chat/services/stream-hooks/)
 - [Chat hooks](https://johanneslatzel.github.io/llm-chat/chats/chat-hooks/)
 - [Serialization](https://johanneslatzel.github.io/llm-chat/chats/serialization/)
 - [Environment variables](https://johanneslatzel.github.io/llm-chat/env/)
 - [Architecture](https://johanneslatzel.github.io/llm-chat/architecture/)
+- [API reference](https://johanneslatzel.github.io/llm-chat/api-reference/)
 
 Full documentation: **[johanneslatzel.github.io/llm-chat](https://johanneslatzel.github.io/llm-chat/)**
 
@@ -544,6 +579,16 @@ Issues and pull requests are welcome.
 Use conventional commit messages.
 
 ## Ecosystem
+
+### Packages
+
+| Project | Docs | npm | Description |
+|---------|------|-----|-------------|
+| [llm-chat](https://github.com/johanneslatzel/llm-chat) | [docs](https://johanneslatzel.github.io/llm-chat/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat) | abstract chat engine, streaming, hooks and tool loop |
+| [llm-chat-message](https://github.com/johanneslatzel/llm-chat-message) | [docs](https://johanneslatzel.github.io/llm-chat-message/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-message) | message, role, finish-reason and writer primitives |
+| [llm-chat-tool](https://github.com/johanneslatzel/llm-chat-tool) | [docs](https://johanneslatzel.github.io/llm-chat-tool/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-tool) | tool, result and hook primitives |
+| [llm-chat-openai](https://github.com/johanneslatzel/llm-chat-openai) | [docs](https://johanneslatzel.github.io/llm-chat-openai/) | [npm](https://www.npmjs.com/package/@johannes.latzel/llm-chat-openai) | OpenAI and OpenAI-compatible provider |
+| [env](https://github.com/johanneslatzel/env) | [docs](https://johanneslatzel.github.io/env/) | [npm](https://www.npmjs.com/package/@johannes.latzel/env) | typed environment variable readers |
 
 ### Integration
 

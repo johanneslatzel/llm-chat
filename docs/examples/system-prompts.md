@@ -1,4 +1,4 @@
-# System Prompts
+# System prompts
 
 A system prompt can come from a flat string, a single file, a directory of
 files, or a tree built in code. The snippets below are independent.
@@ -8,11 +8,10 @@ files, or a tree built in code. The snippets below are independent.
 A flat string bypasses the prompt tree.
 
 ```typescript
-import { OpenAIChatService } from '@johannes.latzel/llm-chat';
+import { ChatServiceConfiguration } from '@johannes.latzel/llm-chat';
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('You are a concise assistant.')
-    .create();
+const config = new ChatServiceConfiguration();
+config.systemPrompt = 'You are a concise assistant.';
 ```
 
 Set `LLM_CHAT_SYSTEM_PROMPT` to use a flat prompt from the environment.
@@ -22,11 +21,13 @@ Set `LLM_CHAT_SYSTEM_PROMPT` to use a flat prompt from the environment.
 Load one `.md` or `.txt` file as the flat prompt.
 
 ```typescript
-import { OpenAIChatService } from '@johannes.latzel/llm-chat';
+import { ChatServiceConfiguration, type ChatService } from '@johannes.latzel/llm-chat';
 
-const service = OpenAIChatService.builder()
-    .systemPromptFile('AGENTS.md')
-    .create();
+const config = new ChatServiceConfiguration();
+config.systemPromptFile = 'AGENTS.md';
+
+// Build the ChatService with `config`.
+declare const service: ChatService;
 
 await service.init();
 console.log(service.chat().getSystem()?.content);
@@ -48,17 +49,13 @@ prompts/
 ```
 
 ```typescript
-import {
-    ChatServiceConfiguration,
-    OpenAIChatService
-} from '@johannes.latzel/llm-chat';
+import { ChatServiceConfiguration, type ChatService } from '@johannes.latzel/llm-chat';
 
 const config = new ChatServiceConfiguration();
 config.systemPromptDir = './prompts';
 
-const service = OpenAIChatService.builder()
-    .withServiceConfig(config)
-    .create();
+// Build your ChatService with `config`.
+declare const service: ChatService;
 
 await service.init();
 console.log(service.chat().getSystem()?.content);
@@ -72,9 +69,9 @@ The directory is read only if it exists. It is never created. Set
 Build the tree directly when the prompt needs explicit names and ordering.
 
 ```typescript
-import { OpenAIChatService } from '@johannes.latzel/llm-chat';
+import type { ChatService } from '@johannes.latzel/llm-chat';
 
-const service = OpenAIChatService.builder().create();
+declare const service: ChatService;
 
 const general = service.chat().system().child('general');
 general.prompt('persona').setContent('You are a concise assistant.');
@@ -108,5 +105,5 @@ With all three set, the flat string wins.
 ## See also
 
 - [Building messages](../chats/building-messages.md)
-- [OpenAIChatService](../services/openai.md)
-- [Environment Variables](../env.md)
+- [Adding a new provider](../services/custom-provider.md)
+- [Environment variables](../env.md)

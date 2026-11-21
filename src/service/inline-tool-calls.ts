@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ToolCall } from '../chat/types.js';
+import type { ToolCall } from '@johannes.latzel/llm-chat-message';
 import type { InlineMarkerPair } from './inline-markers.js';
 
 /** Opening and closing markers used to delimit inline tool-call payloads. */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MessageQueue } from '../../../src/chat/queue.js';
-import { ChatMessageOrigin, ChatRole } from '../../../src/chat/types.js';
+import { ChatMessageOrigin, ChatRole } from '@johannes.latzel/llm-chat-message';
 
 describe('MessageQueue', () => {
     it('queues and drains user message', async () => {

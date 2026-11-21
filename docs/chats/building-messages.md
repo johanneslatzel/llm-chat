@@ -12,17 +12,16 @@ The system prompt can be supplied in three ways. When several sources are
 configured at once, flat strings win over files, which win over the prompt tree.
 
 - **Flat string**: `ChatServiceConfiguration.systemPrompt` (env
-  `LLM_CHAT_SYSTEM_PROMPT`) or `OpenAIChatService.builder().systemPrompt(...)`.
-  It bypasses the tree entirely.
-- **File**: `systemPromptFile` (env `LLM_CHAT_SYSTEM_PROMPT_FILE`) or
-  `.systemPromptFile("AGENTS.md")`. The file content is used as the flat prompt.
+  `LLM_CHAT_SYSTEM_PROMPT`). It bypasses the tree entirely.
+- **File**: `systemPromptFile` (env `LLM_CHAT_SYSTEM_PROMPT_FILE`). The file
+  content is used as the flat prompt.
 - **Tree**: build components with `chat.system()`, or load `.md`/`.txt` files
   from a directory via `systemPromptDir` (env `LLM_CHAT_SYSTEM_PROMPT_DIR`).
 
 `chat.getSystem()` returns the effective system message, while `chat.system()`
-always exposes the tree. See [System prompts](../services/openai.md#flat-system-prompt).
+always exposes the tree. See [ChatService configuration](../services/chat-service.md#configuration).
 
-![System prompt tree: chat.system() with general and tutorials containers, the general prompts, and numbered tool packages](../assets/llm-chat-system-prompt-tree.svg)
+![System prompt tree: containers, prompts, tool packages](../assets/llm-chat-system-prompt-tree.svg)
 
 Two standard child containers are available for organisation:
 
@@ -41,7 +40,7 @@ The system prompt is stored separately from the regular message list:
 - **`chat.messages()`**: returns only user, assistant, tool, and reasoning messages. The system message is **not** included.
 - **`chat.getSystem()`**: returns the effective system message: a flat `systemPrompt` or `systemPromptFile` when configured, otherwise the composed prompt tree. `null` when neither yields content.
 
-When `service.send()` sends messages to the provider, the system prompt is always the first element.
+`chat.messages()` returns the persisted history without the system prompt; `service.send()` includes the effective system prompt (`chat.getSystem()`) in the outgoing request.
 
 Every message is automatically timestamped with a `createdAt: Date` set at creation time and tagged with an `origin` field (`ChatMessageOrigin`) indicating whether it came from the user, the model, a tool, a hook, or the system prompt.
 
@@ -61,26 +60,26 @@ the suite creates a sub-container titled `Tool Package <ClassName>` with an
 `Applicability` child (the comma-separated tool names) and a `Tutorial` child
 (the value returned by `tutorial()`). The resulting tree is injected under
 `chat.system().child('tutorials')`, so it appears in every conversation
-alongside the general prompts. See [Tool packages](../tools/packages.md#tutorial)
+alongside the general prompts. See [Tool packages](https://johanneslatzel.github.io/llm-chat-tool/tools/packages/#tutorial)
 for the full example.
 
 ## Adding messages
 
 ```typescript
 chat.system().child('general').prompt('persona').setContent("You are a pirate.");
-chat.user("Hello!");
+await chat.user("Hello!");
 
 // seed assistant responses or fake tool calls
-chat.assistant("Let me check...", [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city":"Berlin"}' } }]);
-chat.tool('{"temp":22}', "call_1");
-chat.assistant("It's 22°C.");
+await chat.assistant("Let me check...", [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city":"Berlin"}' } }]);
+await chat.tool('{"temp":22}', "call_1");
+await chat.assistant("It's 22°C.");
 ```
 
 ## Direct chat vs message queue
 
 Messages can be added in four ways: `user()`, `assistant()`, `tool()`, and `reasoning()`, either directly on the chat handle or via the message queue. Choose based on timing and concurrency needs.
 
-![Direct chat methods append immediately, while the queue and JSON hooks stage messages until the next send()](../assets/llm-chat-message-flow.svg)
+![Message flow: direct chat, queue, and send](../assets/llm-chat-message-flow.svg)
 
 ### Direct chat (`chat.xxx()`)
 
@@ -122,7 +121,7 @@ in place; children are cleared rather than replaced:
 
 ```typescript
 chat.system().child('general').prompt('persona').setContent("You are a pirate.");
-chat.user("Hello!");
+await chat.user("Hello!");
 chat.clear();
 chat.messages(); // []
 chat.getSystem(); // null
@@ -171,8 +170,7 @@ Messages are still added to history while silent.
 To reset the entire service (chat, stream, tools, and JSON hooks) in one call,
 use `service.clear()`; see [ChatService](../services/chat-service.md).
 
-
 ## Example pages
 
-- [Interactive Chat](../examples/interactive-chat.md)
+- [Interactive chat](../examples/interactive-chat.md)
 - [Persistence](../examples/persistence.md)

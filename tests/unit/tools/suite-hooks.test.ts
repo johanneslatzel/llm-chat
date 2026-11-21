@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ToolSuite, ToolEvent } from '../../../src/tools/suite.js';
+import { ToolSuite } from '../../../src/tools/suite.js';
+import { ToolEvent } from '@johannes.latzel/llm-chat-tool';
 import { AlphaTool, BetaTool, FailingTool, ThrowsNonErrorTool } from '../../helper/tool-mocks.js';
 
 describe('ToolSuite hooks', () => {

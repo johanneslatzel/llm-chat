@@ -1,12 +1,14 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { Hook } from './hook.js';
-import { ChatMessageOrigin, ChatRole, type HookMessageWriter } from '../chat/types.js';
+import {
+    ChatMessageOrigin,
+    ChatRole,
+    type HookMessageWriter
+} from '@johannes.latzel/llm-chat-message';
+import { Hook, type ToolHookBuilder, type ToolResult } from '@johannes.latzel/llm-chat-tool';
 import { ChunkType } from '../service/stream-types.js';
-import type { ToolResult } from '../tools/result.js';
 import type { ChatHookBuilder } from '../chat/hooks.js';
 import type { StreamHookBuilder } from '../service/stream.js';
-import type { ToolHookBuilder } from '../tools/hook.js';
 
 export type JsonHookTarget = 'chat' | 'stream' | 'tool';
 

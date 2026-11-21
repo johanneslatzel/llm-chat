@@ -5,16 +5,17 @@ execution, and the send loop. This example logs all four around a customer
 lookup tool that can fail.
 
 ```typescript
+import { ChunkType, type ChatService } from '@johannes.latzel/llm-chat';
+import { ChatRole } from '@johannes.latzel/llm-chat-message';
 import {
-    ChatRole,
-    ChunkType,
-    OpenAIChatService,
     ResultStatus,
     Tool,
     ToolParameterProperty,
     ToolParameters,
-    type PartialToolResult
-} from '@johannes.latzel/llm-chat';
+    type PartialToolResult,
+} from '@johannes.latzel/llm-chat-tool';
+// Supply a ChatService from a provider package, or subclass ChatService.
+declare const service: ChatService;
 
 class LookupCustomerTool extends Tool {
     constructor() {
@@ -35,9 +36,11 @@ class LookupCustomerTool extends Tool {
     }
 }
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('Use tools to answer questions about customers.')
-    .create();
+service.chat()
+    .system()
+    .child('general')
+    .prompt('rules')
+    .setContent('Use tools to answer questions about customers.');
 
 service.tools().add(new LookupCustomerTool());
 
@@ -110,5 +113,5 @@ Stream hooks are fire-and-forget. Tool and service hooks are awaited.
 - [Hooks overview](../hooks/index.md)
 - [Stream hooks](../services/stream-hooks.md)
 - [Chat hooks](../chats/chat-hooks.md)
-- [Tool hooks](../tools/tool-hooks.md)
+- [Tool hooks](https://johanneslatzel.github.io/llm-chat-tool/tools/tool-hooks/)
 - [Service hooks](../services/chat-service.md#service-hooks)

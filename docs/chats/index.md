@@ -1,4 +1,4 @@
-# ChatInterface
+# Chats
 
 The chat handle returned by `service.chat()` builds message history and reacts to messages.
 
@@ -6,4 +6,4 @@ The chat handle returned by `service.chat()` builds message history and reacts t
 
 - [Building messages](building-messages.md): system prompt, adding/reading messages, clearing, silent mode
 - [Chat hooks](chat-hooks.md): observe and react to new messages
-- [Serialization](serialization.md): toJSON / fromJSON
+- [Serialization](serialization.md): toJSON / chatFromJSON

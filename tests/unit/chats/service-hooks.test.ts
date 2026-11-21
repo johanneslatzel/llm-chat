@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { FinishReason } from '../../../src/index.js';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { TestChatService } from '../../helper/service-mocks.js';
 

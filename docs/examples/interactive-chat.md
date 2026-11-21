@@ -1,15 +1,14 @@
-# Interactive Chat
+# Interactive chat
 
 Keep one service and one conversation for a terminal session. The loop streams
 each reply and supports two session commands.
 
 ```typescript
 import { createInterface } from 'node:readline/promises';
-import { ChunkType, OpenAIChatService } from '@johannes.latzel/llm-chat';
+import { ChunkType, type ChatService } from '@johannes.latzel/llm-chat';
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('You are a concise assistant.')
-    .create();
+// Supply a ChatService from a provider package, or subclass ChatService.
+declare const service: ChatService;
 
 service.stream()
     .hook()
@@ -47,8 +46,8 @@ try {
 | `/clear` | Remove all messages and prompt components |
 | `/exit`, `/quit` | End the session |
 
-The flat system prompt from `builder.systemPrompt()` is a service configuration,
-not part of the prompt tree. It survives `/clear`.
+A flat `ChatServiceConfiguration.systemPrompt` is service configuration, not part
+of the prompt tree. It survives `/clear`.
 
 ## See also
 

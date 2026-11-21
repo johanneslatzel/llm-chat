@@ -7,9 +7,10 @@ message from the command line, sends it, and writes the updated session back to
 ```typescript
 import { readFile, writeFile } from 'node:fs/promises';
 import {
-    OpenAIChatService,
     chatFromJSON,
-    type ChatJSON
+    ChatServiceConfiguration,
+    type ChatJSON,
+    type ChatService,
 } from '@johannes.latzel/llm-chat';
 
 const SESSION_FILE = 'session.json';
@@ -25,9 +26,11 @@ const raw = await readFile(SESSION_FILE, 'utf8').catch(() => null);
 const saved = raw ? (JSON.parse(raw) as SessionFile) : null;
 const systemPrompt = saved?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
 
-const service = OpenAIChatService.builder()
-    .systemPrompt(systemPrompt)
-    .create();
+const config = new ChatServiceConfiguration();
+config.systemPrompt = systemPrompt;
+
+// Build the ChatService with `config` before restoring the snapshot.
+declare const service: ChatService;
 
 if (saved) {
     const snapshot = chatFromJSON(saved.chat);

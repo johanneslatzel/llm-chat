@@ -1,46 +1,49 @@
 # Testing
 
-`builder.withClient()` accepts a preconfigured client, which makes the whole
-tool loop testable without a network or an API key.
+A `ChatService` subclass is the seam for deterministic tests. Implement
+`createStream()` to replay scripted `StreamEvent` values, and the whole tool
+loop runs without a network or a provider package.
 
-This example runs one tool-call round and one final answer against a fake
-client. It uses `node:assert` so the script runs without a test framework.
+This example runs one tool-call round and one final answer against a scripted
+service. It uses `node:assert` so the script runs without a test framework.
 
 ```typescript
 import assert from 'node:assert/strict';
-import type OpenAI from 'openai';
 import {
-    ChatRole,
-    OpenAIChatService,
+    ChatService,
+    ChatServiceConfiguration,
+    StreamEventType,
+    type StreamEvent,
+} from '@johannes.latzel/llm-chat';
+import { ChatRole, FinishReason } from '@johannes.latzel/llm-chat-message';
+import {
     ResultStatus,
     Tool,
     ToolParameterProperty,
     ToolParameters,
-    type PartialToolResult
-} from '@johannes.latzel/llm-chat';
+    type PartialToolResult,
+} from '@johannes.latzel/llm-chat-tool';
 
-function chunk(delta: Record<string, unknown>, finishReason: string | null = null) {
-    return {
-        choices: [{ index: 0, delta, finish_reason: finishReason }],
-        usage: null
-    };
-}
+class ScriptedChatService extends ChatService {
+    private index = 0;
 
-async function* stream(chunks: unknown[]): AsyncIterable<unknown> {
-    for (const value of chunks) yield value;
-}
+    constructor(
+        private rounds: StreamEvent[][],
+        config?: ChatServiceConfiguration,
+    ) {
+        super(config);
+    }
 
-function fakeClient(rounds: unknown[][]) {
-    let calls = 0;
-    const client = {
-        chat: {
-            completions: {
-                create: async () => stream(rounds[calls++] ?? [])
-            }
+    roundsPlayed(): number {
+        return this.index;
+    }
+
+    protected async *createStream(_signal?: AbortSignal): AsyncIterable<StreamEvent> {
+        const round = this.rounds[this.index++] ?? [];
+        for (const event of round) {
+            yield event;
         }
-    } as unknown as OpenAI;
-
-    return { client, calls: () => calls };
+    }
 }
 
 class LookupOrderTool extends Tool {
@@ -50,8 +53,8 @@ class LookupOrderTool extends Tool {
             'Look up an order by ID.',
             new ToolParameters(
                 { id: ToolParameterProperty.string('Order ID') },
-                ['id']
-            )
+                ['id'],
+            ),
         );
     }
 
@@ -62,28 +65,28 @@ class LookupOrderTool extends Tool {
     }
 }
 
-const fake = fakeClient([
+const rounds: StreamEvent[][] = [
     [
-        chunk({
-            tool_calls: [
-                {
-                    index: 0,
-                    id: 'call_1',
-                    function: { name: 'lookup_order', arguments: '{"id":"42"}' }
-                }
-            ]
-        }),
-        chunk({}, 'tool_calls')
+        {
+            type: StreamEventType.ToolCallDelta,
+            index: 0,
+            id: 'call_1',
+            name: 'lookup_order',
+            arguments: '{"id":"42"}',
+        },
+        { type: StreamEventType.Finish, reason: FinishReason.ToolCalls },
     ],
-    [chunk({ content: 'Order 42 is shipped.' }), chunk({}, 'stop')]
-]);
+    [
+        { type: StreamEventType.Content, text: 'Order 42 is shipped.' },
+        { type: StreamEventType.Finish, reason: FinishReason.Stop },
+    ],
+];
 
-const service = OpenAIChatService.builder()
-    .model('test-model')
-    .withClient(fake.client)
-    .systemPrompt('Use tools when they provide data.')
-    .create();
+const config = new ChatServiceConfiguration();
+config.systemPrompt = 'Use tools when they provide data.';
+config.systemPromptDir = '';
 
+const service = new ScriptedChatService(rounds, config);
 service.tools().add(new LookupOrderTool());
 
 await service.chat().user('Where is order 42?');
@@ -91,30 +94,34 @@ await service.send();
 
 const messages = service.chat().messages();
 
-assert.equal(fake.calls(), 2);
+assert.equal(service.roundsPlayed(), 2);
 assert.ok(
     messages.some(
         (message) =>
             message.role === ChatRole.Tool &&
-            message.content === 'Order 42: shipped'
-    )
+            message.content === 'Order 42: shipped',
+    ),
 );
 assert.equal(messages.at(-1)?.content, 'Order 42 is shipped.');
 
 console.log('Tool loop completed without a network request.');
 ```
 
-## How the fake works
+`config.systemPromptDir = ''` disables prompt-directory loading, so the default
+`./prompts/` directory is never read.
 
-- The fake implements the only method the service calls:
-  `chat.completions.create`.
-- Each array in `rounds` is the stream for one provider round. The first round
-  requests `lookup_order`; the second returns the final text.
+## How the scripted service works
 
-The same pattern tests hooks, error paths, and usage by changing the chunks.
+- `createStream()` returns the next scripted round and increments
+  `roundsPlayed()`. The first round requests `lookup_order`; the second returns
+  the final text.
+- The service under test is a real `ChatService` subclass, so the tool loop,
+  message history, hooks and stream accumulation all run normally.
+- The same pattern tests hooks, error paths, usage and interruption by changing
+  the events.
 
 ## See also
 
-- [OpenAIChatService builder](../services/openai.md#builder)
+- [Adding a new provider](../services/custom-provider.md)
 - [ChatService tool-call loop](../services/chat-service.md#tool-call-loop)
 - [Stream summaries](../services/stream-hooks.md#summaries)

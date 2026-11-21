@@ -1,4 +1,4 @@
-# Context Management
+# Context management
 
 `ChatService` can estimate the size of the next request and compact the history
 before it reaches the model. This example keeps the last six messages and
@@ -9,29 +9,23 @@ Set the model's real context window in production.
 
 ```typescript
 import {
-    ChatMessageOrigin,
-    ChatRole,
     ChatServiceConfiguration,
-    OpenAIChatService,
     type ChatInterface,
-    type ChatMessage
+    type ChatService,
 } from '@johannes.latzel/llm-chat';
+import { ChatMessageOrigin, ChatRole, type ChatMessage } from '@johannes.latzel/llm-chat-message';
 
 const KEEP_RECENT = 6;
 
 const config = new ChatServiceConfiguration();
 config.contextWindowSizeHint = 1_000;
+config.systemPrompt = 'You are a concise assistant.';
 
-const service = OpenAIChatService.builder()
-    .withServiceConfig(config)
-    .systemPrompt('You are a concise assistant.')
-    .create();
-
-const summarizer = OpenAIChatService.builder()
-    .systemPrompt(
-        'Summarise the conversation. Keep decisions, facts, and open questions. Return only the summary.'
-    )
-    .create();
+// Supply both services from a provider package, or subclass ChatService.
+// The summarizer needs its own configuration with this system prompt:
+// 'Summarise the conversation. Keep decisions, facts, and open questions. Return only the summary.'
+declare const service: ChatService;
+declare const summarizer: ChatService;
 
 async function summarize(messages: ChatMessage[]): Promise<string> {
     const transcript = messages

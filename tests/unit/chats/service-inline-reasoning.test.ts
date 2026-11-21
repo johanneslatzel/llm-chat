@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    ChatRole,
-    ChatService,
-    ChatServiceConfiguration,
-    ChunkType,
-    FinishReason,
-    type CompletionUsage
-} from '../../../src/index.js';
+    ChatService, ChatServiceConfiguration, ChunkType, type CompletionUsage } from '../../../src/index.js';
+import { ChatRole, FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { DEFAULT_INLINE_REASONING_MARKERS } from '../../../src/service/inline-reasoning.js';
 import type { Chunk } from '../../../src/service/stream-types.js';

@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    CharCountEstimator,
-    ChatMessageOrigin,
-    ChatRole,
-    ChatServiceConfiguration,
-    type ToolCall
-} from '../../../src/index.js';
+    CharCountEstimator, ChatServiceConfiguration } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole, type ToolCall } from '@johannes.latzel/llm-chat-message';
 import { TestChatService, SimpleTestTool } from '../../helper/service-mocks.js';
 
 function makeConfig(): ChatServiceConfiguration {

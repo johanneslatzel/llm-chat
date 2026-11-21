@@ -7,15 +7,17 @@ This example starts a long answer, waits 1.5 seconds, then replaces the request
 with a shorter instruction.
 
 ```typescript
-import {
-    ChunkType,
-    FinishReason,
-    OpenAIChatService
-} from '@johannes.latzel/llm-chat';
+import { ChunkType, type ChatService } from '@johannes.latzel/llm-chat';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('Follow the latest instruction.')
-    .create();
+// Supply a ChatService from a provider package, or subclass ChatService.
+declare const service: ChatService;
+
+service.chat()
+    .system()
+    .child('general')
+    .prompt('rules')
+    .setContent('Follow the latest instruction.');
 
 service.stream()
     .hook()

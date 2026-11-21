@@ -1,4 +1,5 @@
-import { ChatService, ChatServiceConfiguration, Tool, ToolParameters, ResultStatus, type PartialToolResult } from '../../src/index.js';
+import { ChatService, ChatServiceConfiguration } from '../../src/index.js';
+import { Tool, ToolParameters, ResultStatus, type PartialToolResult } from '@johannes.latzel/llm-chat-tool';
 import { StreamEvent, StreamEventType } from '../../src/service/service.js';
 
 /** ChatService whose createStream replays a fixed list of stream events. */

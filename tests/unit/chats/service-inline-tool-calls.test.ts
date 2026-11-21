@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    ChatRole,
-    ChatService,
-    ChatServiceConfiguration,
-    ChunkType,
-    FinishReason
-} from '../../../src/index.js';
+    ChatService, ChatServiceConfiguration, ChunkType } from '../../../src/index.js';
+import { ChatRole, FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import type { Chunk } from '../../../src/service/stream-types.js';
 import {

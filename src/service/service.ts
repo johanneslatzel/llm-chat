@@ -2,17 +2,17 @@ import { readFile, readdir } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { Mutex } from 'async-mutex';
-import { envBool, envInt, envOptionalString, envString } from '../env.js';
+import { createEnvReader, RangePolicy } from '@johannes.latzel/env';
 import { Chat } from '../chat/chat.js';
+import type { ChatInterface } from '../chat/types.js';
 import {
-    ChatInterface,
-    ChatMessage,
     ChatMessageOrigin,
     ChatRole,
     FinishReason,
-    MessageWriter,
-    ToolCall
-} from '../chat/types.js';
+    type ChatMessage,
+    type MessageWriter,
+    type ToolCall
+} from '@johannes.latzel/llm-chat-message';
 import { TokenEstimator, CharCountEstimator } from '../chat/token-estimator.js';
 import { MessageQueue } from '../chat/queue.js';
 import { ChunkStream } from './stream.js';
@@ -39,22 +39,27 @@ import { StructuredOutputError, StructuredOutputErrorReason } from './response-f
 export { StreamEventType };
 export type { StreamEvent };
 
+/** Reader shared by the configuration defaults. Clamps numeric values to their
+ *  minimum and trims optional strings, matching the historical helpers. */
+const env = createEnvReader({ rangePolicy: RangePolicy.Clamp, trimOptionalString: true });
+
 /** Configuration for a {@link ChatService}. All fields can be set via environment variables. */
 export class ChatServiceConfiguration {
     /** Maximum number of tool-call rounds before the loop is interrupted (env: `LLM_CHAT_MAX_TOOL_CALL_ROUNDS`, default: 10). */
-    maxToolCallRounds: number = envInt('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 10);
+    maxToolCallRounds: number = env.int('LLM_CHAT_MAX_TOOL_CALL_ROUNDS', 10, 1);
     /** Directory containing system prompt files (*.md, *.txt). Each file is loaded as a component under the `general` container, with the filename (without extension) as the prompt ID (env: `LLM_CHAT_SYSTEM_PROMPT_DIR`). Priority: env var > config value > fallback to `./prompts/`. The directory is only read if it exists; it is never created and no default files are written. */
     private _systemPromptDir?: string;
 
     get systemPromptDir(): string {
-        return envString('LLM_CHAT_SYSTEM_PROMPT_DIR', this._systemPromptDir ?? './prompts/');
+        return env.string('LLM_CHAT_SYSTEM_PROMPT_DIR', this._systemPromptDir ?? './prompts/');
     }
 
     set systemPromptDir(value: string) {
         this._systemPromptDir = value;
     }
     /** Comma-separated paths to files whose contents are loaded as user messages (env: `LLM_CHAT_USER_PROMPTS`). */
-    userPromptPaths: string[] = envString('LLM_CHAT_USER_PROMPTS', '')
+    userPromptPaths: string[] = env
+        .string('LLM_CHAT_USER_PROMPTS', '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
@@ -62,24 +67,24 @@ export class ChatServiceConfiguration {
 
     /** Directory containing `.json` hook definition files. Priority: env var (`LLM_CHAT_HOOKS_DIR`) > config value > `undefined` (no hooks loaded). */
     get hooksDir(): string | undefined {
-        return envOptionalString('LLM_CHAT_HOOKS_DIR') ?? this._hooksDir;
+        return env.optionalString('LLM_CHAT_HOOKS_DIR') ?? this._hooksDir;
     }
 
     set hooksDir(value: string | undefined) {
         this._hooksDir = value;
     }
     /** When set, this flat string overrides the system prompt tree. File-based system prompts are not loaded while it is set, and the string is sent directly as the system (or developer) message instead of `chat.getSystem()` (env: `LLM_CHAT_SYSTEM_PROMPT`). */
-    systemPrompt?: string = envOptionalString('LLM_CHAT_SYSTEM_PROMPT');
+    systemPrompt?: string = env.optionalString('LLM_CHAT_SYSTEM_PROMPT');
     /** Path to a single `.md` or `.txt` file whose contents are used as the flat system prompt. `systemPrompt` takes precedence. The file is read during `init()` or the first `send()` (env: `LLM_CHAT_SYSTEM_PROMPT_FILE`). */
-    systemPromptFile?: string = envOptionalString('LLM_CHAT_SYSTEM_PROMPT_FILE');
+    systemPromptFile?: string = env.optionalString('LLM_CHAT_SYSTEM_PROMPT_FILE');
     /** Trim leading and trailing whitespace from assistant and reasoning content before storing (default: `false`). */
     trimMessages?: boolean = false;
     /** Parse inline reasoning markers in streamed content (env: `LLM_CHAT_PARSE_INLINE_REASONING`, default: `false`). Disabled by default because marker text may be ordinary content for some models. */
-    parseInlineReasoning?: boolean = envBool('LLM_CHAT_PARSE_INLINE_REASONING', false);
+    parseInlineReasoning?: boolean = env.bool('LLM_CHAT_PARSE_INLINE_REASONING', false);
     /** Marker pair used when {@link parseInlineReasoning} is enabled (default: `<think>` / `</think>`). */
     inlineReasoningMarkers?: InlineReasoningMarkers = { ...DEFAULT_INLINE_REASONING_MARKERS };
     /** Parse explicit inline tool-call blocks in streamed content (env: `LLM_CHAT_PARSE_INLINE_TOOL_CALLS`, default: `false`). */
-    parseInlineToolCalls?: boolean = envBool('LLM_CHAT_PARSE_INLINE_TOOL_CALLS', false);
+    parseInlineToolCalls?: boolean = env.bool('LLM_CHAT_PARSE_INLINE_TOOL_CALLS', false);
     /** Marker pair used when {@link parseInlineToolCalls} is enabled (default: `<tool_call>` / `</tool_call>`). */
     inlineToolCallMarkers?: InlineToolCallMarkers = {
         ...DEFAULT_INLINE_TOOL_CALL_MARKERS
@@ -88,7 +93,7 @@ export class ChatServiceConfiguration {
      *  the value is used by {@link ChatService.isContextWindowExceeded} as the
      *  threshold for token estimation. This is a hint, not a hard limit —
      *  the service does not enforce it automatically (env: `LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT`). */
-    contextWindowSizeHint: number = envInt('LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT', 0, 0);
+    contextWindowSizeHint: number = env.int('LLM_CHAT_CONTEXT_WINDOW_SIZE_HINT', 0, 0);
 }
 
 /** Base class for LLM service providers. Handles the tool-call loop, prompt file loading, and concurrency. */
@@ -266,7 +271,7 @@ export abstract class ChatService implements JsonHookControls {
             total += this._estimateMessage(est, msg);
         }
 
-        for (const tool of this._tools.getTools()) {
+        for (const tool of this._tools.getDefinitions()) {
             total += est.estimate(JSON.stringify(tool));
         }
 
@@ -434,9 +439,8 @@ export abstract class ChatService implements JsonHookControls {
      */
     lastAssistantContent(): string | undefined {
         const messages = this.chatImpl.messages();
-        for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const message = messages[index];
-            if (message !== undefined && message.role === ChatRole.Assistant) {
+        for (const message of messages.slice().reverse()) {
+            if (message.role === ChatRole.Assistant) {
                 return message.content;
             }
         }

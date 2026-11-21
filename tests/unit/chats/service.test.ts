@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatRole, ChatServiceConfiguration, FinishReason, type CompletionUsage } from '../../../src/index.js';
+import { ChatServiceConfiguration, type CompletionUsage } from '../../../src/index.js';
+import { ChatRole, FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { TestChatService, SimpleTestTool } from '../../helper/service-mocks.js';

@@ -1,29 +1,6 @@
-export { Tool } from './tools/tool.js';
-export { TimedTool, TimedToolNotificationKind } from './tools/tool-timeout.js';
-export {
-    ToolParameters,
-    ToolParameterProperty,
-    PropertyType,
-    ObjectPropertyBuilder
-} from './tools/parameter.js';
-export {
-    ResultStatus,
-    ResultBuilder,
-    type ToolResult,
-    type PartialToolResult
-} from './tools/result.js';
-export { ToolPackage } from './tools/package.js';
 export { type ToolSuiteInterface } from './tools/suite.js';
-export type {
-    ChatInterface,
-    MessageWriter,
-    ToolCall,
-    ChatMessage,
-    ChatJSON,
-    HandoffStrategy
-} from './chat/types.js';
+export type { ChatInterface, ChatJSON, HandoffStrategy } from './chat/types.js';
 export type { ChunkStreamInterface } from './service/stream-types.js';
-export { ChatRole, ChatMessageOrigin, FinishReason } from './chat/types.js';
 export { ChatHookBuilder, MessageHookBuilder } from './chat/hooks.js';
 export { chatFromJSON } from './chat/chat.js';
 export { Prompt, PromptContainer } from './chat/system-prompt.js';
@@ -32,12 +9,6 @@ export { ChatServiceConfiguration, ChatService, StreamEventType } from './servic
 export type { StreamEvent } from './service/service.js';
 export type { InlineReasoningMarkers } from './service/inline-reasoning.js';
 export type { InlineToolCallMarkers } from './service/inline-tool-calls.js';
-export {
-    OpenAIChatServiceConfiguration,
-    ReasoningEffort,
-    ToolChoice,
-    Verbosity
-} from './service/config.js';
 export {
     ResponseFormatType,
     StructuredOutputError,
@@ -51,9 +22,6 @@ export type {
     ResponseFormatJsonSchema,
     ResponseFormatText
 } from './service/response-format.js';
-export { OpenAIChatService, OpenAIChatServiceBuilder } from './service/openai.js';
-export { Hook } from './hooks/hook.js';
-export { HookBuilderBase, type HasHooks } from './hooks/hook-builder.js';
 export { ChunkType } from './service/stream-types.js';
 export { StreamHookBuilder, StreamChunkFilterBuilder, type ChunkOfType } from './service/stream.js';
 export type {

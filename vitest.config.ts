@@ -11,7 +11,6 @@ export default defineConfig({
             include: ['src/**/*.ts'],
             exclude: [
                 'src/index.ts',
-                'src/hooks/hook-builder.ts',
             ],
             reportOnFailure: true,
             thresholds: {

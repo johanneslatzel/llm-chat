@@ -117,6 +117,5 @@ When the stream finishes, the `FinishChunk` is pushed to the stream (and stream 
 
 ## Example pages
 
-- [Quick Start](../examples/quick-start.md)
-- [Usage And Cost](../examples/usage-and-cost.md)
+- [Quick start](../examples/quick-start.md)
 - [Hooks](../examples/hooks.md)

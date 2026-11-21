@@ -1,15 +1,20 @@
-# Service Hooks
+# Service hooks
 
 Service hooks run around the send loop and its individual provider rounds. This
 example retries a yes/no answer until it contains one of the accepted words, or
 until three attempts have run.
 
 ```typescript
-import { OpenAIChatService } from '@johannes.latzel/llm-chat';
+import type { ChatService } from '@johannes.latzel/llm-chat';
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('Answer yes/no questions with exactly one word: yes or no.')
-    .create();
+// Supply a ChatService from a provider package, or subclass ChatService.
+declare const service: ChatService;
+
+service.chat()
+    .system()
+    .child('general')
+    .prompt('rules')
+    .setContent('Answer yes/no questions with exactly one word: yes or no.');
 
 let attempts = 0;
 

@@ -1,12 +1,12 @@
 import { Mutex } from 'async-mutex';
 import {
-    ChatMessage,
     ChatMessageOrigin,
     ChatRole,
-    HookMessageWriter,
-    MessageWriter,
-    ToolCall
-} from './types.js';
+    type ChatMessage,
+    type HookMessageWriter,
+    type MessageWriter,
+    type ToolCall
+} from '@johannes.latzel/llm-chat-message';
 
 /** Thread-safe message queue backed by its own mutex. Implements both {@link MessageWriter} and {@link HookMessageWriter}. */
 export class MessageQueue implements MessageWriter, HookMessageWriter {

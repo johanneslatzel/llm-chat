@@ -12,7 +12,7 @@ service.interrupt(true);
 
 ## Re-sending
 
-`interrupt(true)` sets a flag that makes the running `send()` loop again before it returns. The flag is reset once `send()` runs.
+`interrupt(true)` sets a flag that makes the running `send()` loop run again before it returns. The flag is reset once `send()` runs.
 
 The flag only takes effect when it is set during a running `send()`, for example from a hook; setting it before `send()` starts does nothing. `setNeedsResend()` sets the same flag without aborting the stream, so it follows the same rule.
 

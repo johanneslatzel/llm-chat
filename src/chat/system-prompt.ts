@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ChatMessage, ChatMessageOrigin, ChatRole } from './types.js';
+import { ChatMessageOrigin, ChatRole, type ChatMessage } from '@johannes.latzel/llm-chat-message';
 
 const INDENTATION = '    ';
 

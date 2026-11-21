@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChatMessageOrigin, ChatRole } from '../../../src/index.js';
+import { ChatMessageOrigin, ChatRole } from '@johannes.latzel/llm-chat-message';
 import { Chat } from '../../../src/chat/chat.js';
 
 describe('Chat hooks', async () => {

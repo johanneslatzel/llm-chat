@@ -1,5 +1,4 @@
-import { Hook } from '../hooks/hook.js';
-import { HookBuilderBase } from '../hooks/hook-builder.js';
+import { Hook, HookBuilderBase } from '@johannes.latzel/llm-chat-tool';
 
 export enum ServiceEvent {
     BeforeSendLoop = 'beforeSendLoop',

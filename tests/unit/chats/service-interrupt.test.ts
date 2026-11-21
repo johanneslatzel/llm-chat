@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ChatService, ChatServiceConfiguration, FinishReason } from '../../../src/index.js';
+import { ChatService, ChatServiceConfiguration } from '../../../src/index.js';
+import { FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { TestChatService } from '../../helper/service-mocks.js';

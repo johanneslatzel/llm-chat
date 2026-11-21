@@ -412,7 +412,6 @@ config.hooksDir = './my-hooks';
 
 Priority: env var > config value > unset (no hooks loaded).
 
-
 ## Example pages
 
-- [Json Hooks](../examples/json-hooks.md)
+- [JSON hooks](../examples/json-hooks.md)

@@ -6,6 +6,8 @@ same append methods as `MessageWriter`, but each call takes an explicit
 `ChatMessageOrigin`.
 
 ```typescript
+import { ChatMessageOrigin } from '@johannes.latzel/llm-chat-message';
+
 await writer.user('Please clarify.', ChatMessageOrigin.Hook);
 ```
 
@@ -14,8 +16,8 @@ A message written this way is queued and drained into the chat on the next
 origin `Hook`, so a hook cannot re-trigger itself.
 
 Host code stages messages through `service.queue()`, which uses the default
-origin for each method. `ChatMessageOrigin` is exported from the package root;
-`HookMessageWriter` is not.
+origin for each method. `ChatMessageOrigin` and `HookMessageWriter` are
+exported by `@johannes.latzel/llm-chat-message`; the engine re-exports neither.
 
 ## See also
 

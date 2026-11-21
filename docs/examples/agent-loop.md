@@ -1,4 +1,4 @@
-# Agent Loop
+# Agent loop
 
 The tool loop inside `send()` handles individual tool calls. An outer loop is
 useful when the conversation needs a condition tools cannot express alone, such
@@ -9,13 +9,13 @@ five rounds have run.
 
 ```typescript
 import {
-    OpenAIChatService,
     ResultStatus,
     Tool,
     ToolParameterProperty,
     ToolParameters,
-    type PartialToolResult
-} from '@johannes.latzel/llm-chat';
+    type PartialToolResult,
+} from '@johannes.latzel/llm-chat-tool';
+import type { ChatService } from '@johannes.latzel/llm-chat';
 
 let answer: string | null = null;
 
@@ -46,9 +46,14 @@ class SubmitAnswerTool extends Tool {
     }
 }
 
-const service = OpenAIChatService.builder()
-    .systemPrompt('Answer the question, then call submit_answer with the final answer.')
-    .create();
+// Supply a ChatService from a provider package, or subclass ChatService.
+declare const service: ChatService;
+
+service.chat()
+    .system()
+    .child('general')
+    .prompt('rules')
+    .setContent('Answer the question, then call submit_answer with the final answer.');
 
 service.tools().add(new SubmitAnswerTool());
 
@@ -83,4 +88,4 @@ console.log(`Answer: ${answer}`);
 
 - [ChatService tool-call loop](../services/chat-service.md#tool-call-loop)
 - [Service hooks](../services/chat-service.md#service-hooks)
-- [Tool hooks](../tools/tool-hooks.md)
+- [Tool hooks](https://johanneslatzel.github.io/llm-chat-tool/tools/tool-hooks/)

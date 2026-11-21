@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { ChatRole, ChatServiceConfiguration, FinishReason } from '../../../src/index.js';
+import { ChatServiceConfiguration } from '../../../src/index.js';
+import { ChatRole, FinishReason } from '@johannes.latzel/llm-chat-message';
 import { StreamEvent, StreamEventType } from '../../../src/service/service.js';
 import { ChunkType } from '../../../src/service/stream-types.js';
 import { createTempDir, removeTempDir, createTempFile } from '../../index.js';

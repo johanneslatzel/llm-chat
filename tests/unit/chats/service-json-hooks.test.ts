@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ChatServiceConfiguration, ChatMessageOrigin } from '../../../src/index.js';
+import { ChatServiceConfiguration } from '../../../src/index.js';
+import { ChatMessageOrigin } from '@johannes.latzel/llm-chat-message';
 import { createTempDir, removeTempDir } from '../../index.js';
 import { TestChatService } from '../../helper/service-mocks.js';
 

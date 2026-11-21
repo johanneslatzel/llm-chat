@@ -29,11 +29,11 @@ export interface ResponseFormatJsonSchema {
     };
 }
 
-/** Response format accepted by {@link OpenAIChatService}. */
+/** Response format accepted by a provider. */
 export type ResponseFormat =
     ResponseFormatText | ResponseFormatJsonObject | ResponseFormatJsonSchema;
 
-/** Options for the {@link OpenAIChatServiceBuilder.jsonSchema} builder method. */
+/** Options for a provider's JSON Schema builder method. */
 export interface JsonSchemaResponseOptions {
     name: string;
     schema: JsonSchemaObject;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ChatRole, Prompt, PromptContainer } from '../../../src/index.js';
+import { Prompt, PromptContainer } from '../../../src/index.js';
+import { ChatRole } from '@johannes.latzel/llm-chat-message';
 import { PromptComponent, ComponentType } from '../../../src/chat/system-prompt.js';
 
 // ---------------------------------------------------------------------------

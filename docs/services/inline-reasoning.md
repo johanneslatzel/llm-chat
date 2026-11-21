@@ -1,21 +1,22 @@
 # Inline reasoning
 
-Some OpenAI-compatible servers return reasoning in structured fields such as
-`reasoning_content`. Others leave the reasoning inside ordinary content,
-wrapped in explicit markers such as `<think>...</think>`. `llm-chat` supports
-both shapes.
+Providers can expose reasoning in two ways:
 
-Structured fields are recognised automatically by [`OpenAIChatService`](openai.md).
-Inline markers are **opt-in** because the same text can be ordinary content for
-one model and reasoning for another.
+- as structured `StreamEventType.Reasoning` events;
+- as explicit markers inside ordinary content, such as
+  `<think>...</think>`.
+
+The engine supports both shapes. Structured reasoning is provider-driven:
+any `ChatService` subclass can emit it. Inline markers are **opt-in** because
+the same text can be ordinary content for one model and reasoning for another.
 
 ## Configuration
 
 Inline parsing lives on `ChatServiceConfiguration`, so it works for every
-provider, not only the OpenAI implementation.
+provider:
 
 ```typescript
-import { ChatServiceConfiguration, OpenAIChatService } from "@johannes.latzel/llm-chat";
+import { ChatServiceConfiguration } from "@johannes.latzel/llm-chat";
 
 const config = new ChatServiceConfiguration();
 config.parseInlineReasoning = true;
@@ -23,13 +24,10 @@ config.parseInlineReasoning = true;
 // Optional. These are the defaults.
 config.inlineReasoningMarkers = {
     open: "<think>",
-    close: "</think>"
+    close: "</think>",
 };
 
-const service = OpenAIChatService.builder()
-    .model("your-model")
-    .withServiceConfig(config)
-    .create();
+// Pass this configuration to your ChatService subclass constructor.
 ```
 
 | Property | Env var | Default | Description |
@@ -43,9 +41,8 @@ marker is treated as ordinary content. A model or template that opens the
 reasoning block in the prompt and emits only `</think>` is therefore **not**
 auto-detected; its reasoning remains content.
 
-The `filterReasoning` option on `OpenAIChatServiceConfiguration` is separate: it
-controls which stored reasoning messages are sent back to the API. It does not
-control inbound parsing.
+A provider may also filter stored reasoning messages from outgoing requests.
+That is provider behavior and separate from inbound parsing.
 
 ## Stream, summary and history
 
@@ -55,7 +52,7 @@ When parsing is enabled:
   `StreamSummary.reasoning`;
 - ordinary text remains `ChunkType.Content` chunks and
   `StreamSummary.content`;
-- structured reasoning fields continue to work exactly as before;
+- structured reasoning events continue to work exactly as before;
 - multiple reasoning blocks are emitted in stream order;
 - the final `ChatRole.Reasoning` message contains the reasoning for that
   provider round, and the assistant message contains only ordinary content.
@@ -75,9 +72,9 @@ provider populates both, both are preserved in arrival order. The library does
 whether two strings are semantically the same reasoning. If a provider sends the
 same text through both channels, that duplication is preserved.
 
-For a given provider, prefer the channel it actually uses. Enable inline parsing
-for servers that put markers in content; leave it disabled for servers that
-already populate structured reasoning fields.
+For a given provider, prefer the channel it uses. Enable inline parsing
+for backends that put markers in content; leave it disabled for backends that
+already emit structured reasoning events.
 
 ## Marker semantics
 
@@ -119,13 +116,9 @@ next provider round or the next `send()` call.
 ## Related
 
 - [Inline tool calls](inline-tool-calls.md): opt-in parsing of explicit `<tool_call>` blocks in content.
+- [Adding a new provider](custom-provider.md): emit structured reasoning events.
 
 ## Trust warning
 
 Reasoning text is model-generated output. Treat it as untrusted model content,
 not as a verified explanation, a source of truth, or instructions to follow.
-
-
-## Example pages
-
-- [Reasoning](../examples/reasoning.md)

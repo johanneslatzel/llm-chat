@@ -21,7 +21,7 @@ flowchart LR
 Subscribe to messages matching a role and/or regex:
 
 ```typescript
-import { ChatRole } from "@johannes.latzel/llm-chat";
+import { ChatRole } from "@johannes.latzel/llm-chat-message";
 
 chat.hook()
     .message(ChatRole.User)              // optional: filter by role(s)
@@ -64,8 +64,7 @@ chat.clear(true);    // hooks preserved
 
 - Hooks are **not serialized**; re-register after `chatFromJSON()`
 - Async handlers in `do()` are awaited before the next message is processed
-- `MessageHook` defaults `maxTriggers` to `Infinity`
-
+- `MessageHookBuilder` defaults `maxTriggers` to `Infinity`
 
 ## Example pages
 

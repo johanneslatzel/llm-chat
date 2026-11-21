@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ToolSuite, ToolEvent } from '../../../src/tools/suite.js';
+import { ToolSuite } from '../../../src/tools/suite.js';
+import { ToolEvent } from '@johannes.latzel/llm-chat-tool';
 import { AlphaTool, BetaTool } from '../../helper/tool-mocks.js';
-import { ResultStatus } from '../../../src/index.js';
+import { ResultStatus } from '@johannes.latzel/llm-chat-tool';
 
 describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
     let registry: ToolSuite;
@@ -13,9 +14,9 @@ describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
     it('registers a tool', () => {
         const tool = new AlphaTool();
         registry.add(tool);
-        const tools = registry.getTools();
+        const tools = registry.getDefinitions();
         expect(tools).toHaveLength(1);
-        expect(tools[0]!.function.name).toBe('alpha');
+        expect(tools[0]!.name).toBe('alpha');
     });
 
     it('throws when registering a duplicate tool name', () => {
@@ -25,12 +26,12 @@ describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
         );
     });
 
-    it('getTools returns all registered tools as OpenAI format', () => {
+    it('getDefinitions returns all registered tools in neutral format', () => {
         registry.add(new AlphaTool());
         registry.add(new BetaTool());
-        const tools = registry.getTools();
+        const tools = registry.getDefinitions();
         expect(tools).toHaveLength(2);
-        const names = tools.map((t) => t.function.name).sort();
+        const names = tools.map((t) => t.name).sort();
         expect(names).toEqual(['alpha', 'beta']);
     });
 
@@ -66,7 +67,7 @@ describe('ToolSuite (aliased as ToolRegistry for backward compat)', () => {
         await expect(registry.executeTool('alpha', '{invalid json}')).rejects.toThrow();
     });
 
-    it('getTools returns empty array when no tools registered', () => {
-        expect(registry.getTools()).toEqual([]);
+    it('getDefinitions returns empty array when no tools registered', () => {
+        expect(registry.getDefinitions()).toEqual([]);
     });
 });

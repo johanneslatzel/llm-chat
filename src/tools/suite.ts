@@ -1,10 +1,15 @@
-import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
-import { Tool } from './tool.js';
-import { ResultStatus, ToolResult } from './result.js';
-import { ToolPackage } from './package.js';
-import { ToolEvent, ToolEventMap, ToolEventTarget, ToolHookBuilder } from './hook.js';
-export { ToolEvent };
-import { HasHooks } from '../hooks/hook-builder.js';
+import {
+    ResultStatus,
+    Tool,
+    ToolEvent,
+    ToolPackage,
+    type HasHooks,
+    type ToolDefinition,
+    type ToolEventMap,
+    type ToolEventTarget,
+    ToolHookBuilder,
+    type ToolResult
+} from '@johannes.latzel/llm-chat-tool';
 import { Prompt, PromptContainer } from '../chat/system-prompt.js';
 
 /** Tool registry that stores tool instances and exposes them to the service. */
@@ -20,6 +25,8 @@ export interface ToolSuiteInterface extends HasHooks<ToolHookBuilder> {
     rebuildTutorials(): void;
     /** Look up a tool by name. Returns `undefined` if not found. */
     get(name: string): Tool | undefined;
+    /** Return provider-neutral definitions for all registered tools. */
+    getDefinitions(): ToolDefinition[];
 }
 
 export class ToolSuite implements ToolEventTarget {
@@ -81,8 +88,9 @@ export class ToolSuite implements ToolEventTarget {
         }
     }
 
-    getTools(): ChatCompletionFunctionTool[] {
-        return Object.values(this.#tools).map((tool) => tool.toOpenAI());
+    /** Return provider-neutral definitions for all registered tools. */
+    getDefinitions(): ToolDefinition[] {
+        return Object.values(this.#tools).map((tool) => tool.definition());
     }
 
     /** Remove all registered tools and packages. Does NOT affect the tutorial

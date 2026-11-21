@@ -1,10 +1,10 @@
 import { writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Tool } from '../../src/tools/tool.js';
-import { ToolParameters } from '../../src/tools/parameter.js';
-import { ResultStatus } from '../../src/tools/result.js';
-import type { PartialToolResult } from '../../src/tools/result.js';
+import { Tool } from '@johannes.latzel/llm-chat-tool';
+import { ToolParameters } from '@johannes.latzel/llm-chat-tool';
+import { ResultStatus } from '@johannes.latzel/llm-chat-tool';
+import type { PartialToolResult } from '@johannes.latzel/llm-chat-tool';
 
 export function createTempDir(): string {
     return mkdtempSync(join(tmpdir(), 'json-hooks-test-'));

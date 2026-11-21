@@ -1,6 +1,5 @@
-import { Hook } from '../hooks/hook.js';
-import { HookBuilderBase } from '../hooks/hook-builder.js';
-import { ChatRole, ChatMessage, ChatMatch } from './types.js';
+import { ChatRole, type ChatMessage, type ChatMatch } from '@johannes.latzel/llm-chat-message';
+import { Hook, HookBuilderBase } from '@johannes.latzel/llm-chat-tool';
 import type { Chat } from './chat.js';
 
 /** Entry point for building chat message hooks. Created by {@link ChatInterface.hook}. */

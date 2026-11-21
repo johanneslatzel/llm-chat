@@ -14,10 +14,9 @@ The `systemPrompt` field holds the serialized prompt tree (`ComponentJSON | null
 Every message has a `createdAt: Date` set automatically at creation time. When serialized:
 
 - **`toJSON()`**: `createdAt` is an ISO 8601 string (e.g. `"2026-06-04T15:30:00.000Z"`)
-- **`fromJSON()`**: the ISO string is restored back to a `Date` object
+- **`chatFromJSON()`**: the ISO string is restored back to a `Date` object
 
 Hooks are not serialized; re-register after `chatFromJSON()`.
-
 
 ## Example pages
 

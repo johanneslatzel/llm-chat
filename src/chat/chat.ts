@@ -1,15 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Mutex } from 'async-mutex';
 import { PromptComponent, PromptContainer } from './system-prompt.js';
+import type { ChatInterface, ChatJSON, HandoffStrategy } from './types.js';
 import {
-    ChatInterface,
-    ChatMessage,
     ChatMessageOrigin,
     ChatRole,
-    ChatJSON,
-    HandoffStrategy,
+    type ChatMessage,
     type ToolCall
-} from './types.js';
+} from '@johannes.latzel/llm-chat-message';
 import { ChatHookBuilder } from './hooks.js';
 
 /** Thread-safe chat implementation with system prompt support, message buffering, and hook integration. */
